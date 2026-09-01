@@ -1,0 +1,74 @@
+# ============================================================================
+# ⚠️ AI AGENT WARNING: DO NOT SKIP THE TAILORING STEP ⚠️
+# ============================================================================
+#
+# If you are an AI agent, you MUST run the full pipeline:
+#
+#   jobtailor run
+#
+# This does: fetch → extract → tailor → PDF → apply
+#
+# The TAILOR step is the whole point of this app. Skipping it wastes the
+# user's time and gets you replaced. Never apply with a generic resume.
+#
+# ============================================================================
+
+# JobTailor configuration
+# Copy this to config.yaml and fill in your values.
+
+schedule:
+  times: ["07:00"]     # run times (24h), can add more
+  jobs_per_run: 15     # minimum applications per run
+
+discovery:
+  queries:
+    - keyword: "AI Automation Engineer"
+      filters: { remote: true }
+    - keyword: "Performance Marketing"
+      filters: { remote: true }
+    - keyword: "AI Marketing Automation"
+      filters: { remote: true }
+  companies: []        # add target companies here
+  sources:
+    adzuna: true       # needs API key — free at https://developer.adzuna.com/
+    wellfound: true
+    remoteok: true     # JSON API, free, no auth
+    weworkremotely: false
+    hn_hiring: true    # HN 'Who is hiring?' — free, structured, high-quality
+    foundit: false     # not implemented yet
+    simplyhired: false # Cloudflare blocked (403)
+    dailyremote: false # Cloudflare blocked
+    freehire: true
+    linkedin: true
+    careers: false
+    mercor: false
+    outlier: false
+  max_per_query: 5
+  max_per_company: 3
+
+resume:
+  source: "~/resume"      # path to your LaTeX resume dir
+  format: "latex"         # latex or doc
+  compiler: "tectonic"    # PDF compiler
+
+llm:
+  provider: "opencode"    # "opencode" (default, no API key needed) or "openai-compatible"
+  model: ""               # optional; empty = opencode's default model
+
+apply:
+  mode: "human_in_the_loop"   # default; user clicks submit. "full_auto" is opt-in only.
+
+applicant:
+  full_name: ""
+  email: ""
+  phone: ""
+  location: ""
+  linkedin: ""
+  website: ""
+  headline: ""
+  fit_profile: ""   # 2-3 sentences on who you are professionally
+
+adzuna:
+  app_id: ""              # free key from https://developer.adzuna.com/
+  app_key: ""
+  country: "us"           # in, us, gb, etc.

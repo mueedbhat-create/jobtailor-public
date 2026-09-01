@@ -1,0 +1,29 @@
+# Copilot Instructions — AI AGENT INSTRUCTIONS
+
+## CRITICAL: NEVER APPLY WITHOUT TAILORING
+
+JobTailor exists to tailor resumes for each job. If you skip the tailoring step, you are wasting the user's time.
+
+## REQUIRED WORKFLOW
+
+```bash
+jobtailor run
+```
+
+This runs the full pipeline:
+1. fetch-leads → Find remote jobs
+2. extract-jds → Extract job descriptions
+3. tailor → Customize resume for each job (THE MOST IMPORTANT STEP)
+4. export-pdfs → Generate tailored PDFs
+5. apply-queue → Open applications with tailored PDFs
+
+## PROHIBITED
+
+- Do NOT apply manually using ego-browser or fillInput
+- Do NOT use the same resume for every application
+- Do NOT skip `jobtailor tailor`
+- Do NOT skip `jobtailor export-pdfs`
+
+## IF UNSURE
+
+Ask the user. Never guess. Never take shortcuts.
