@@ -16,6 +16,7 @@ class JobLead:
     source: str
     remote: bool = True
     location: str = ""
+    salary_raw: str = ""
 
     def canonical_url(self) -> str:
         """Strip common tracking params for dedup purposes."""
@@ -41,6 +42,11 @@ class JobDescription:
     title: str
     description: str
     keywords: list[str] = field(default_factory=list)
+    salary_raw: str = ""
+    salary_min: float | None = None
+    salary_max: float | None = None
+    salary_currency: str = ""
+    salary_period: str = ""
 
 
 @dataclass
@@ -90,3 +96,32 @@ class JobLeadBatch:
 
     def filter_remote(self) -> None:
         self.leads = [lead for lead in self.leads if lead.remote]
+
+    def filter_salary(self, min_salary: float = 0, max_salary: float = 0) -> int:
+        """Remove leads without salary info or outside the given range.
+
+        Returns the number of leads removed.
+        """
+        if min_salary <= 0 and max_salary <= 0:
+            return 0
+        kept: list[JobLead] = []
+        removed = 0
+        for lead in self.leads:
+            if not lead.salary_raw:
+                kept.append(lead)  # unknown salary passes filter
+                continue
+            # Simple check on raw text
+            from jobtailor.salary import extract_salary
+            sr = extract_salary(lead.salary_raw)
+            if sr is None or sr.midpoint is None:
+                kept.append(lead)
+            elif min_salary <= 0 and sr.midpoint <= max_salary:
+                kept.append(lead)
+            elif max_salary <= 0 and sr.midpoint >= min_salary:
+                kept.append(lead)
+            elif min_salary <= sr.midpoint <= max_salary:
+                kept.append(lead)
+            else:
+                removed += 1
+        self.leads = kept
+        return removed

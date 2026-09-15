@@ -110,6 +110,48 @@ class GmailConfig:
 
 
 @dataclass
+class NotificationConfig:
+    enabled: bool = False
+    provider: str = ""  # "telegram" or "slack"
+    telegram_bot_token: str = ""
+    telegram_chat_id: str = ""
+    slack_webhook_url: str = ""
+    notify_on: list[str] = field(
+        default_factory=lambda: ["daily_summary", "interview", "offer"]
+    )
+
+
+@dataclass
+class WebhookConfig:
+    enabled: bool = False
+    endpoints: list[dict[str, str]] = field(default_factory=list)
+    secret: str = ""
+    timeout: int = 10
+
+
+@dataclass
+class ScoringConfig:
+    enabled: bool = False
+    salary_weight: float = 0.25
+    tech_match_weight: float = 0.25
+    remote_weight: float = 0.15
+    company_size_weight: float = 0.10
+    title_match_weight: float = 0.15
+    source_reliability_weight: float = 0.10
+    preferred_salary_min: float = 0
+    preferred_salary_max: float = 0
+    preferred_tech: list[str] = field(default_factory=list)
+    preferred_titles: list[str] = field(default_factory=list)
+
+
+@dataclass
+class ResumeVersionsConfig:
+    enabled: bool = False
+    versions_file: str = "output/versions.json"
+    auto_pick: bool = True  # auto-pick best version per job
+
+
+@dataclass
 class Config:
     schedule: ScheduleConfig = field(default_factory=ScheduleConfig)
     discovery: DiscoveryConfig = field(default_factory=DiscoveryConfig)
@@ -120,6 +162,10 @@ class Config:
     adzuna: AdzunaConfig = field(default_factory=AdzunaConfig)
     internships: InternshipConfig = field(default_factory=InternshipConfig)
     gmail: GmailConfig = field(default_factory=GmailConfig)
+    notifications: NotificationConfig = field(default_factory=NotificationConfig)
+    webhooks: WebhookConfig = field(default_factory=WebhookConfig)
+    scoring: ScoringConfig = field(default_factory=ScoringConfig)
+    resume_versions: ResumeVersionsConfig = field(default_factory=ResumeVersionsConfig)
 
 
 def load_config(path: str | Path) -> Config:
@@ -193,5 +239,41 @@ def load_config(path: str | Path) -> Config:
     cfg.gmail.token_file = str(gm.get("token_file", "") or "")
     cfg.gmail.auto_sync = bool(gm.get("auto_sync", False))
     cfg.gmail.sync_interval_minutes = int(gm.get("sync_interval_minutes", 60))
+
+    # Notifications
+    notif = raw.get("notifications") or {}
+    cfg.notifications.enabled = bool(notif.get("enabled", False))
+    cfg.notifications.provider = str(notif.get("provider", ""))
+    cfg.notifications.telegram_bot_token = str(notif.get("telegram_bot_token", "") or "")
+    cfg.notifications.telegram_chat_id = str(notif.get("telegram_chat_id", "") or "")
+    cfg.notifications.slack_webhook_url = str(notif.get("slack_webhook_url", "") or "")
+    cfg.notifications.notify_on = notif.get("notify_on", ["daily_summary", "interview", "offer"])
+
+    # Webhooks
+    wh = raw.get("webhooks") or {}
+    cfg.webhooks.enabled = bool(wh.get("enabled", False))
+    cfg.webhooks.endpoints = wh.get("endpoints", [])
+    cfg.webhooks.secret = str(wh.get("secret", "") or "")
+    cfg.webhooks.timeout = int(wh.get("timeout", 10))
+
+    # Scoring
+    sc = raw.get("scoring") or {}
+    cfg.scoring.enabled = bool(sc.get("enabled", False))
+    cfg.scoring.salary_weight = float(sc.get("salary_weight", 0.25))
+    cfg.scoring.tech_match_weight = float(sc.get("tech_match_weight", 0.25))
+    cfg.scoring.remote_weight = float(sc.get("remote_weight", 0.15))
+    cfg.scoring.company_size_weight = float(sc.get("company_size_weight", 0.10))
+    cfg.scoring.title_match_weight = float(sc.get("title_match_weight", 0.15))
+    cfg.scoring.source_reliability_weight = float(sc.get("source_reliability_weight", 0.10))
+    cfg.scoring.preferred_salary_min = float(sc.get("preferred_salary_min", 0))
+    cfg.scoring.preferred_salary_max = float(sc.get("preferred_salary_max", 0))
+    cfg.scoring.preferred_tech = sc.get("preferred_tech", [])
+    cfg.scoring.preferred_titles = sc.get("preferred_titles", [])
+
+    # Resume versions
+    rv = raw.get("resume_versions") or {}
+    cfg.resume_versions.enabled = bool(rv.get("enabled", False))
+    cfg.resume_versions.versions_file = str(rv.get("versions_file", "output/versions.json"))
+    cfg.resume_versions.auto_pick = bool(rv.get("auto_pick", True))
 
     return cfg

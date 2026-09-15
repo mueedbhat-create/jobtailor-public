@@ -32,12 +32,40 @@ Most people send the same generic resume to every job. That's why they get ignor
 
 ## Features
 
+### Core
 - **Multi-source job discovery** — Wellfound, LinkedIn, HN Who's Hiring, RemoteOK, Adzuna, and more
 - **AI-powered resume tailoring** — Customizes your resume for each job using LLMs
 - **PDF generation** — Compiles tailored LaTeX resumes to PDFs
+- **ATS text-layer verification** — Checks compiled PDFs for contact details, page count, and readable text
+- **LLM fit gate** — Filters out pure software-engineer roles and location-ineligible jobs
 - **Application queue** — Opens application pages for human review
 - **Dashboard** — Next.js + shadcn/ui dashboard to track applications
 - **Auto-apply mode** — Optional full auto-submit (use with care)
+
+### Intelligence
+- **Cross-day duplicate detection** — Prevents re-applying to jobs seen in previous runs
+- **Salary range extraction** — Parses salary from JDs and filters by range
+- **Custom weighted scoring** — Fit score based on salary, tech match, remote, company size
+- **Company research enrichment** — Detects industry, tech stack from JD text
+- **Response rate analytics** — Conversion funnel, source effectiveness, daily summaries
+
+### Resume Management
+- **Multi-resume support** — Define multiple base resumes, auto-pick best per job
+- **Resume versioning/A-B testing** — Track which resume variations get more responses
+- **Tailoring quality review** — See diffs of what LLM changed, approve/reject per section
+- **Cover letter generation** — AI-generated cover letters per job
+
+### Integrations
+- **Telegram/Slack notifications** — Daily summaries and real-time alerts
+- **Webhook integrations** — Send events to n8n, Zapier, or custom endpoints
+- **CSV/JSON export** — Export full application history for spreadsheets/CRMs
+
+### Operations
+- **Docker + Docker Compose** — One-command containerized deployment
+- **Gmail tracking** — Classifies confirmations/rejections/interviews/offers
+- **Follow-up drafts** — Surfaces quiet applications, drafts follow-up messages
+- **Internship pipeline** — Isolated track with separate queries and state
+- **Daily scheduling** — macOS LaunchAgent for automated runs
 
 ## Quick Start
 
@@ -81,6 +109,14 @@ A 5-stage production line:
 | `jobtailor apply-queue` | Open application pages |
 | `jobtailor serve` | Start dashboard |
 | `jobtailor schedule` | Install daily scheduler |
+| `jobtailor analytics` | Show response rate analytics |
+| `jobtailor export` | Export history to JSON/CSV |
+| `jobtailor versions` | Manage resume versions (A-B testing) |
+| `jobtailor cover-letters` | Generate cover letters per job |
+| `jobtailor score` | Score and rank leads by fit |
+| `jobtailor review` | Review tailoring diffs before export |
+| `jobtailor followups` | Draft follow-up messages |
+| `jobtailor track-gmail` | Sync application statuses via Gmail |
 
 ## Configuration
 
@@ -125,8 +161,15 @@ Dashboard shows:
 ## Docker
 
 ```bash
+# Single container
 docker build -t jobtailor .
 docker run -v $(pwd)/config.yaml:/app/config.yaml -v $(pwd)/resume:/root/resume jobtailor run
+
+# Docker Compose (API + Dashboard + Scheduler)
+cp config.example.yaml config.yaml
+# Edit config.yaml, then:
+docker compose up -d
+# Dashboard at http://localhost:3000
 ```
 
 ## Development
