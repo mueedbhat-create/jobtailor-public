@@ -44,13 +44,6 @@ class LeadFetcher:
 
         batch.dedupe()
         batch.filter_remote()
-
-        # Cross-day duplicate detection
-        from jobtailor.dedup import dedupe_against_history
-        historical_removed = dedupe_against_history(batch, self._output)
-        if historical_removed:
-            print(f"  [dedup] removed {historical_removed} lead(s) seen in previous runs")
-
         excluded = self._exclude_unmatched(batch)
         if excluded:
             print(f"  [filter] dropped {excluded} lead(s) matching exclude_title_keywords")

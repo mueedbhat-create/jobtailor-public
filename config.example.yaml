@@ -15,7 +15,6 @@
 
 # JobTailor configuration
 # Copy this to config.yaml and fill in your values.
-# IMPORTANT: config.yaml contains secrets — it is .gitignored. Never commit it.
 
 schedule:
   times: ["07:00"]     # run times (24h), can add more
@@ -29,25 +28,24 @@ discovery:
       filters: { remote: true }
     - keyword: "AI Marketing Automation"
       filters: { remote: true }
-  companies: []        # add target companies here
+  companies:
+    - "Anarchy Labs"
   sources:
-    adzuna: true       # needs API key — free at https://developer.adzuna.com/
+    adzuna: true
     wellfound: true
-    remoteok: true     # JSON API, free, no auth
-    weworkremotely: false
-    hn_hiring: true    # HN 'Who is hiring?' — free, structured, high-quality
-    foundit: false     # not implemented yet
-    simplyhired: false # Cloudflare blocked (403)
-    dailyremote: false # Cloudflare blocked
-    freehire: true
-    linkedin: true
+    glassdoor: false
+    foundit: false
+    simplyhired: false
+    dailyremote: false
+    linkedin: false
     careers: false
     mercor: false
     outlier: false
   max_per_query: 5
   max_per_company: 3
-  exclude_title_keywords: []  # case-insensitive substrings to skip
-  skip_engineer_specific: true  # LLM gate: skip pure software-engineer roles
+  skip_engineer_specific: true   # LLM gate: skip ONLY jobs specifically seeking
+                                 # an engineer; AI-automation work always applies
+                                 # even when titled "AI Automation Engineer"
 
 resume:
   source: "~/resume"      # path to your LaTeX resume dir
@@ -69,54 +67,25 @@ applicant:
   linkedin: ""
   website: ""
   headline: ""
-  fit_profile: ""   # 2-3 sentences on who you are professionally
+  location: ""      # your city/country — the fit gate skips region-restricted
+                    # jobs that exclude it, even when titled remote
+  fit_profile: ""   # 2-3 sentences on who you are professionally — used by the
+                    # fit gate to decide which jobs match. Be explicit about
+                    # what you are NOT (e.g. "NOT an engineer, no engineering
+                    # degree") if you want engineer roles filtered.
 
 adzuna:
   app_id: ""              # free key from https://developer.adzuna.com/
   app_key: ""
-  country: "us"           # in, us, gb, etc.
-
-internships:
-  enabled: false
-  queries: []             # override discovery queries for internships
-  jobs_per_run: 10
-  output_base: "output/internships"
+  country: "in"           # in, us, gb, etc.
 
 gmail:
-  enabled: false
-  client_secrets_file: ""   # path to OAuth client secrets JSON
-  token_file: ""            # path to token cache (created after first OAuth)
-  auto_sync: false
+  enabled: false          # set true once you complete the OAuth flow below
+  client_secrets_file: "" # OAuth client secrets JSON from Google Cloud Console
+  token_file: ""          # path where the access/refresh token is cached
+  auto_sync: false        # sync automatically: after every pipeline run and
+                          # on an interval while `jobtailor serve` is running
   sync_interval_minutes: 60
-
-notifications:
-  enabled: false
-  provider: ""              # "telegram" or "slack"
-  telegram_bot_token: ""    # from @BotFather
-  telegram_chat_id: ""      # your chat ID
-  slack_webhook_url: ""     # incoming webhook URL
-  notify_on: ["daily_summary", "interview", "offer"]
-
-webhooks:
-  enabled: false
-  endpoints: []             # [{"url": "https://your-n8n/webhook/...", "events": "new_jobs,daily_summary", "secret": ""}]
-  secret: ""
-  timeout: 10
-
-scoring:
-  enabled: false
-  salary_weight: 0.25
-  tech_match_weight: 0.25
-  remote_weight: 0.15
-  company_size_weight: 0.10
-  title_match_weight: 0.15
-  source_reliability_weight: 0.10
-  preferred_salary_min: 0
-  preferred_salary_max: 0
-  preferred_tech: []        # e.g. ["python", "n8n", "openai"]
-  preferred_titles: []      # e.g. ["marketing", "automation", "growth"]
-
-resume_versions:
-  enabled: false
-  versions_file: "output/versions.json"
-  auto_pick: true           # auto-pick best version per job
+  # Tracking scans your inbox for company replies and labels each application:
+  # confirmation / rejected / interview / offer. Run `jobtailor track-gmail`
+  # (or POST /api/tracking/sync from the dashboard) to sync manually.

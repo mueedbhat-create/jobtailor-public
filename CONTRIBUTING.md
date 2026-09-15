@@ -39,17 +39,3 @@ Do NOT:
 ### If Unsure
 
 Ask the user. Never guess. Never take shortcuts.
-
-## Development
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Run tests: `uv run pytest tests/`
-5. Submit a pull request
-
-## Code Style
-
-- Follow PEP 8
-- Add docstrings to new functions
-- Write tests for new features
