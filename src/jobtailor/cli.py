@@ -25,7 +25,7 @@ def init(
     config: str = typer.Option("config.yaml", help="Target config path"),
 ):
     """Guided setup: check dependencies and write config.yaml."""
-    from jobtailor.setup import build_config, check_dependencies, validate_resume_dir
+    from jobtailor.init_setup import build_config, check_dependencies, validate_resume_dir
 
     target = Path(config)
     if target.exists() and not force:

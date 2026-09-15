@@ -1,0 +1,107 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "jobtailor"
+version = "0.1.0"
+description = "Your daily remote job application assistant. Finds remote jobs, tailors your resume to each one, exports PDFs, and prepares applications for you to submit."
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.11"
+authors = [
+    { name = "mueedbhat-create" },
+]
+keywords = ["job", "resume", "automation", "ai", "latex", "tailoring"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: End Users/Desktop",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Office/Business",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+dependencies = [
+    "typer>=0.9",
+    "pyyaml>=6.0",
+    "fastapi>=0.100",
+    "uvicorn>=0.20",
+    "pydantic>=2.0",
+    "pypdf>=3.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+    "ruff>=0.4",
+    "mypy>=1.8",
+]
+gmail = [
+    "google-api-python-client>=2.0",
+    "google-auth>=2.0",
+    "google-auth-oauthlib>=1.0",
+    "google-auth-httplib2>=0.1",
+]
+openai = [
+    "openai>=1.0",
+]
+
+[project.scripts]
+jobtailor = "jobtailor.cli:app"
+
+[project.urls]
+Homepage = "https://github.com/mueedbhat-create/jobtailor-public"
+Repository = "https://github.com/mueedbhat-create/jobtailor-public"
+Issues = "https://github.com/mueedbhat-create/jobtailor-public/issues"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/jobtailor"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 120
+
+[tool.ruff.lint]
+select = [
+    "E",     # pycodestyle errors
+    "W",     # pycodestyle warnings
+    "F",     # pyflakes
+    "I",     # isort
+    "N",     # pep8-naming
+    "UP",    # pyupgrade
+    "B",     # flake8-bugbear
+    "SIM",   # flake8-simplify
+    "TCH",   # flake8-type-checking
+    "BLE",   # flake8-blind-except
+]
+ignore = [
+    "BLE001",  # blind except Exception — used intentionally for per-job isolation
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["jobtailor"]
+
+[tool.mypy]
+python_version = "3.11"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false  # TODO: enable gradually
+
+[[tool.mypy.overrides]]
+module = [
+    "jobtailor.sources.*",
+]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = "-v --tb=short"
