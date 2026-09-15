@@ -1,5 +1,10 @@
 # JobTailor
 
+[![CI](https://github.com/mueedbhat-create/jobtailor-public/actions/workflows/ci.yml/badge.svg)](https://github.com/mueedbhat-create/jobtailor-public/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
+[![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
+
 Your daily remote job application assistant. Finds remote jobs across multiple portals, tailors your resume to each one, exports PDFs, and prepares applications for you to submit.
 
 ## Who Benefits
@@ -38,13 +43,16 @@ Most people send the same generic resume to every job. That's why they get ignor
 
 ```bash
 # Install
-git clone <this-repo>
-cd jobtailor
+git clone https://github.com/mueedbhat-create/jobtailor-public.git
+cd jobtailor-public
+pip install -e .
+
+# Or with uv (recommended)
 uv sync
 
 # Configure
 cp config.example.yaml config.yaml
-# Edit config.yaml with your details
+# Edit config.yaml with your details (never commit it)
 
 # Run the full pipeline
 jobtailor run
@@ -114,10 +122,30 @@ Dashboard shows:
 - Application status
 - Run pipeline button
 
+## Docker
+
+```bash
+docker build -t jobtailor .
+docker run -v $(pwd)/config.yaml:/app/config.yaml -v $(pwd)/resume:/root/resume jobtailor run
+```
+
 ## Development
 
 ```bash
-uv run pytest tests/
+# Install dev dependencies
+pip install -e ".[dev]"
+
+# Run tests
+pytest tests/
+
+# Lint
+ruff check src/ tests/
+
+# Format
+ruff format src/ tests/
+
+# Type check
+mypy src/jobtailor/ --ignore-missing-imports
 ```
 
 ## License

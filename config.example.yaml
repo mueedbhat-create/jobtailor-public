@@ -15,6 +15,7 @@
 
 # JobTailor configuration
 # Copy this to config.yaml and fill in your values.
+# IMPORTANT: config.yaml contains secrets — it is .gitignored. Never commit it.
 
 schedule:
   times: ["07:00"]     # run times (24h), can add more
@@ -45,6 +46,8 @@ discovery:
     outlier: false
   max_per_query: 5
   max_per_company: 3
+  exclude_title_keywords: []  # case-insensitive substrings to skip
+  skip_engineer_specific: true  # LLM gate: skip pure software-engineer roles
 
 resume:
   source: "~/resume"      # path to your LaTeX resume dir
@@ -72,3 +75,16 @@ adzuna:
   app_id: ""              # free key from https://developer.adzuna.com/
   app_key: ""
   country: "us"           # in, us, gb, etc.
+
+internships:
+  enabled: false
+  queries: []             # override discovery queries for internships
+  jobs_per_run: 10
+  output_base: "output/internships"
+
+gmail:
+  enabled: false
+  client_secrets_file: ""   # path to OAuth client secrets JSON
+  token_file: ""            # path to token cache (created after first OAuth)
+  auto_sync: false
+  sync_interval_minutes: 60
