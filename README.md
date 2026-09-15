@@ -1,196 +1,191 @@
 # JobTailor
 
-[![CI](https://github.com/mueedbhat-create/jobtailor-public/actions/workflows/ci.yml/badge.svg)](https://github.com/mueedbhat-create/jobtailor-public/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
-[![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
+Your daily remote job application assistant. Finds remote AI Automation & Performance Marketing jobs across multiple portals, tailors your resume to each one, exports PDFs, and prepares applications for you to submit.
 
-Your daily remote job application assistant. Finds remote jobs across multiple portals, tailors your resume to each one, exports PDFs, and prepares applications for you to submit.
+---
 
-## Who Benefits
+## ⚠️ CRITICAL: AI AGENT INSTRUCTIONS — READ THIS FIRST ⚠️
 
-**Job seekers** — Applying to 50+ jobs? Tailoring each resume manually takes hours. JobTailor does it in minutes.
+**If you are an AI agent, you MUST follow this workflow. No exceptions.**
 
-**Career changers** — Need different resumes for different industries? JobTailor creates tailored versions automatically.
+### THE RULE: NEVER APPLY WITHOUT TAILORING
 
-**Developers** — Want to automate your job search? The code is open source, easy to modify.
+```
+WRONG: Find job → Apply with generic resume
+RIGHT: Find job → tailor → export-pdf → Apply with tailored resume
+```
 
-**Students/interns** — Looking for your first job? JobTailor finds opportunities and tailors applications.
-
-**Freelancers** — Apply to many gigs? JobTailor scales the process.
-
-## The Value
-
-- **Time saved** — 2-3 hours per day of manual tailoring
-- **Better results** — Tailored resumes get 3-5x more responses
-- **AI-powered** — Uses LLMs to customize content intelligently
-- **Free** — Open source, no subscription fees
-
-## The Problem It Solves
-
-Most people send the same generic resume to every job. That's why they get ignored. JobTailor fixes that.
-
-## Features
-
-### Core
-- **Multi-source job discovery** — Wellfound, LinkedIn, HN Who's Hiring, RemoteOK, Adzuna, and more
-- **AI-powered resume tailoring** — Customizes your resume for each job using LLMs
-- **PDF generation** — Compiles tailored LaTeX resumes to PDFs
-- **ATS text-layer verification** — Checks compiled PDFs for contact details, page count, and readable text
-- **LLM fit gate** — Filters out pure software-engineer roles and location-ineligible jobs
-- **Application queue** — Opens application pages for human review
-- **Dashboard** — Next.js + shadcn/ui dashboard to track applications
-- **Auto-apply mode** — Optional full auto-submit (use with care)
-
-### Intelligence
-- **Cross-day duplicate detection** — Prevents re-applying to jobs seen in previous runs
-- **Salary range extraction** — Parses salary from JDs and filters by range
-- **Custom weighted scoring** — Fit score based on salary, tech match, remote, company size
-- **Company research enrichment** — Detects industry, tech stack from JD text
-- **Response rate analytics** — Conversion funnel, source effectiveness, daily summaries
-
-### Resume Management
-- **Multi-resume support** — Define multiple base resumes, auto-pick best per job
-- **Resume versioning/A-B testing** — Track which resume variations get more responses
-- **Tailoring quality review** — See diffs of what LLM changed, approve/reject per section
-- **Cover letter generation** — AI-generated cover letters per job
-
-### Integrations
-- **Telegram/Slack notifications** — Daily summaries and real-time alerts
-- **Webhook integrations** — Send events to n8n, Zapier, or custom endpoints
-- **CSV/JSON export** — Export full application history for spreadsheets/CRMs
-
-### Operations
-- **Docker + Docker Compose** — One-command containerized deployment
-- **Gmail tracking** — Classifies confirmations/rejections/interviews/offers
-- **Follow-up drafts** — Surfaces quiet applications, drafts follow-up messages
-- **Internship pipeline** — Isolated track with separate queries and state
-- **Daily scheduling** — macOS LaunchAgent for automated runs
-
-## Quick Start
+### REQUIRED WORKFLOW (follow in this exact order):
 
 ```bash
-# Install
-git clone https://github.com/mueedbhat-create/jobtailor-public.git
-cd jobtailor-public
-pip install -e .
+# Step 1: Find jobs
+jobtailor fetch-leads
 
-# Or with uv (recommended)
-uv sync
+# Step 2: Extract job descriptions
+jobtailor extract-jds
 
-# Configure
-cp config.example.yaml config.yaml
-# Edit config.yaml with your details (never commit it)
+# Step 3: TAILOR YOUR RESUME FOR EACH JOB (THIS IS THE WHOLE POINT)
+jobtailor tailor
 
-# Run the full pipeline
+# Step 4: Generate tailored PDFs
+jobtailor export-pdfs
+
+# Step 5: Apply with the tailored PDFs
+jobtailor apply-queue
+```
+
+### OR USE THE ONE-COMMAND PIPELINE:
+
+```bash
 jobtailor run
 ```
 
-## How It Works
+This does ALL 5 steps automatically. Use this.
 
-A 5-stage production line:
+### WHY THIS MATTERS:
 
-1. **Find jobs** — Checks multiple sources, filtered to remote-only
-2. **Read jobs** — Extracts job descriptions and requirements
-3. **Tailor resume** — AI rewrites your resume to match each job
-4. **Make PDF** — Compiles tailored resume with Tectonic
-5. **Open applications** — Opens application pages for review
+- A **tailored resume** gets 3-5x more responses than a generic one
+- JobTailor exists BECAUSE of the tailoring step
+- Skipping tailoring defeats the entire purpose of this app
+- You are wasting the user's time if you apply without tailoring
+
+### WHAT NOT TO DO:
+
+❌ Do NOT manually apply to jobs using ego-browser
+❌ Do NOT copy-paste the same resume for every application
+❌ Do NOT skip the `tailor` step
+❌ Do NOT skip the `export-pdfs` step
+❌ Do NOT use `fillInput` or `typeText` to apply manually
+
+### WHAT TO DO:
+
+✅ Use `jobtailor run` or follow the 5-step pipeline
+✅ Let the LLM tailor your resume for each job
+✅ Generate unique PDFs for each application
+✅ Apply with the tailored PDFs attached
+
+### IF YOU ARE UNSURE:
+
+Ask the user. Do not guess. Do not take shortcuts.
+
+---
+
+## How it works
+
+A 5-stage production line, run automatically each morning:
+
+1. **Find jobs** — checks 5 sources (Wellfound, LinkedIn, DailyRemote, SimplyHired, Adzuna), all filtered to remote-only. LinkedIn applications are never auto-submitted — they're always opened for you to review and submit yourself
+2. **Read jobs** — pulls each job description and highlights what the employer is asking for
+3. **Rewrite resume** — an AI adjusts your LaTeX resume to match each job, working on an isolated copy (your original resume folder is never touched). Only rephrases what's genuinely on your resume — nothing you couldn't defend in an interview
+4. **Make PDF** — compiles the tailored resume with Tectonic
+5. **Open applications** — opens each application page with your PDF attached; you review and click Submit
+
+Then a local **dashboard** (Next.js + shadcn/ui over a FastAPI backend) shows each day's jobs, descriptions, tailored PDFs, and apply status — with an optional "run pipeline" button.
+
+Applications are never auto-submitted by default — you're always in the loop (keeps accounts safe from portal ToS policies). Full auto-submit is available per-run from the dashboard, but be aware it can trip anti-bot checks.
+
+## Fully automatic setup (hands-off)
+
+Three commands and it runs itself every day:
+
+```bash
+jobtailor init        # guided setup: deps check, config, apply mode, Gmail
+jobtailor schedule    # daily pipeline runs at your chosen times
+jobtailor serve       # dashboard API + background Gmail status sync
+```
+
+With `apply.mode: full_auto` (the `init` default), each run finds new remote jobs, tailors the resume on an isolated copy, compiles the PDF, fills the application form, attaches the PDF, and submits — no clicks. With `gmail.auto_sync: true`, reply tracking (confirmation / rejection / interview / offer) syncs right after every run and on an interval while `jobtailor serve` is up.
+
+> **Warning:** full auto-submit is the mode most likely to trip job boards' anti-bot checks. Hands-off convenience trades against account risk — prefer `pre_fill` if a board matters to you.
+
+## Install
+
+```bash
+git clone <this-repo>
+cd jobtailor
+uv sync
+cp config.example.yaml config.yaml   # fill in your values
+```
+
+## Usage
+
+```bash
+# Stage 1: discover leads
+uv run jobtailor fetch-leads
+
+# Show what was cached from the latest run
+uv run jobtailor show-leads
+```
+
+## Config
+
+Edit `config.yaml`: schedule times, job count, search queries, target companies, source toggles, resume path, and LLM provider.
+
+## Status
+
+**All 5 stages + scheduling + dashboard are built and tested (32 tests).** `jobtailor run` chains the whole pipeline; a LaunchAgent runs it daily at your configured time.
+
+## Quick start
+
+```bash
+# 1. Install
+brew install tectonic
+uv sync
+
+# 2. Configure
+cp config.example.yaml config.yaml
+#   - add your Adzuna key (optional; skip if using Wellfound only)
+#   - point resume.source at your LaTeX resume dir
+
+# 3. Run the whole pipeline (fetch -> extract -> tailor -> PDF -> open apps)
+jobtailor run
+
+# 4. Track / mark applications as you submit them
+jobtailor apply-status
+jobtailor apply-mark "<job-url>" submitted
+
+# 5. Schedule daily (default 07:00, or set in config.yaml schedule.times)
+jobtailor schedule
+
+# 6. Dashboard (local)
+#   terminal A: jobtailor serve            # FastAPI on 127.0.0.1:8000
+#   terminal B: cd dashboard && pnpm dev   # Next.js on localhost:3000
+```
 
 ## Commands
 
 | Command | What it does |
 |---|---|
-| `jobtailor run` | Full pipeline: fetch → extract → tailor → PDF → apply |
-| `jobtailor init` | Guided setup |
-| `jobtailor fetch-leads` | Discover job leads |
-| `jobtailor extract-jds` | Extract job descriptions |
-| `jobtailor tailor` | Rewrite resume per job |
-| `jobtailor export-pdfs` | Compile tailored PDFs |
-| `jobtailor apply-queue` | Open application pages |
-| `jobtailor serve` | Start dashboard |
-| `jobtailor schedule` | Install daily scheduler |
-| `jobtailor analytics` | Show response rate analytics |
-| `jobtailor export` | Export history to JSON/CSV |
-| `jobtailor versions` | Manage resume versions (A-B testing) |
-| `jobtailor cover-letters` | Generate cover letters per job |
-| `jobtailor score` | Score and rank leads by fit |
-| `jobtailor review` | Review tailoring diffs before export |
-| `jobtailor followups` | Draft follow-up messages |
-| `jobtailor track-gmail` | Sync application statuses via Gmail |
+| `jobtailor init` | Guided setup: dependency checks + writes config.yaml |
+| `jobtailor run` | Full pipeline: fetch → extract → tailor → PDF → open applications |
+| `jobtailor fetch-leads` | Discover job leads from enabled sources (remote-only) |
+| `jobtailor extract-jds` | Extract job descriptions from leads (Scrapling) |
+| `jobtailor tailor` | Rewrite resume per job on an isolated copy (opencode LLM) |
+| `jobtailor export-pdfs` | Compile tailored branches to PDFs (Tectonic) |
+| `jobtailor apply-queue` | Open each application page for human review + submit |
+| `jobtailor apply-status` | Show prepared / submitted / skipped state |
+| `jobtailor apply-mark <url> <status>` | Mark a job submitted or skipped |
+| `jobtailor schedule` | Install macOS LaunchAgent for daily runs |
+| `jobtailor serve` | Start the FastAPI backend for the dashboard |
+| `jobtailor run --mode full_auto` | Pre-fill and submit applications automatically (use with care) |
 
-## Configuration
+## Roadmap
 
-Copy `config.example.yaml` to `config.yaml` and fill in:
-
-```yaml
-schedule:
-  times: ["07:00"]
-
-discovery:
-  queries:
-    - keyword: "AI Automation"
-      filters: { remote: true }
-
-resume:
-  source: "~/resume"
-  format: "latex"
-  compiler: "tectonic"
-
-applicant:
-  full_name: "Your Name"
-  email: "your@email.com"
-  # ... other details
-```
-
-## Dashboard
-
-```bash
-# Terminal 1: Start API
-jobtailor serve
-
-# Terminal 2: Start UI
-cd dashboard && pnpm dev
-```
-
-Dashboard shows:
-- Daily job discoveries
-- Tailored resumes
-- Application status
-- Run pipeline button
-
-## Docker
-
-```bash
-# Single container
-docker build -t jobtailor .
-docker run -v $(pwd)/config.yaml:/app/config.yaml -v $(pwd)/resume:/root/resume jobtailor run
-
-# Docker Compose (API + Dashboard + Scheduler)
-cp config.example.yaml config.yaml
-# Edit config.yaml, then:
-docker compose up -d
-# Dashboard at http://localhost:3000
-```
+- [x] Stage 1a: Adzuna lead fetching (API)
+- [x] Stage 1b: Wellfound lead fetching (scraper)
+- [x] Stage 1c: LinkedIn, DailyRemote, SimplyHired scrapers (LinkedIn is never auto-submitted)
+- [x] Stage 2: JD extraction (Scrapling — anti-bot bypass built in)
+- [x] Stage 3: Resume tailoring (opencode LLM, isolated copies)
+- [x] Stage 4: PDF export (Tectonic)
+- [x] Stage 5: Application queue (open pages for human-in-the-loop submit)
+- [x] Stage 5b: Auto-fill engine (ego-browser pre-fill + optional full auto-submit)
+- [x] Dashboard (Next.js + shadcn/ui + FastAPI, local-only)
+- [x] Scheduling (macOS LaunchAgent at configurable times)
+- [x] `jobtailor run` — one-command full pipeline
+- [ ] Stage 1c: AI gig platform setup (Mercor, Outlier profiles)
 
 ## Development
 
 ```bash
-# Install dev dependencies
-pip install -e ".[dev]"
-
-# Run tests
-pytest tests/
-
-# Lint
-ruff check src/ tests/
-
-# Format
-ruff format src/ tests/
-
-# Type check
-mypy src/jobtailor/ --ignore-missing-imports
+uv run pytest tests/
 ```
-
-## License
-
-MIT

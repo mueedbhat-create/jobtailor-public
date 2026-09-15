@@ -7,7 +7,7 @@ from pathlib import Path
 import yaml
 
 from jobtailor.config import load_config
-from jobtailor.init_setup import DepCheck, build_config, check_dependencies, validate_resume_dir
+from jobtailor.setup import DepCheck, build_config, check_dependencies, validate_resume_dir
 from jobtailor.tracking import maybe_auto_sync
 
 
@@ -38,7 +38,7 @@ class TestValidateResumeDir:
 class TestCheckDependencies:
     def test_reports_all_three(self, monkeypatch):
         monkeypatch.setattr(
-            "jobtailor.init_setup.shutil.which",
+            "jobtailor.setup.shutil.which",
             lambda name: "/usr/bin/" + name if name == "tectonic" else None,
         )
         checks = check_dependencies()
@@ -51,7 +51,7 @@ class TestCheckDependencies:
         assert all(c.hint for c in others)
 
     def test_all_missing(self, monkeypatch):
-        monkeypatch.setattr("jobtailor.init_setup.shutil.which", lambda _: None)
+        monkeypatch.setattr("jobtailor.setup.shutil.which", lambda _: None)
         assert all(not c.ok for c in check_dependencies())
 
 
