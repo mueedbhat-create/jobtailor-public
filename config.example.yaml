@@ -88,3 +88,35 @@ gmail:
   token_file: ""            # path to token cache (created after first OAuth)
   auto_sync: false
   sync_interval_minutes: 60
+
+notifications:
+  enabled: false
+  provider: ""              # "telegram" or "slack"
+  telegram_bot_token: ""    # from @BotFather
+  telegram_chat_id: ""      # your chat ID
+  slack_webhook_url: ""     # incoming webhook URL
+  notify_on: ["daily_summary", "interview", "offer"]
+
+webhooks:
+  enabled: false
+  endpoints: []             # [{"url": "https://your-n8n/webhook/...", "events": "new_jobs,daily_summary", "secret": ""}]
+  secret: ""
+  timeout: 10
+
+scoring:
+  enabled: false
+  salary_weight: 0.25
+  tech_match_weight: 0.25
+  remote_weight: 0.15
+  company_size_weight: 0.10
+  title_match_weight: 0.15
+  source_reliability_weight: 0.10
+  preferred_salary_min: 0
+  preferred_salary_max: 0
+  preferred_tech: []        # e.g. ["python", "n8n", "openai"]
+  preferred_titles: []      # e.g. ["marketing", "automation", "growth"]
+
+resume_versions:
+  enabled: false
+  versions_file: "output/versions.json"
+  auto_pick: true           # auto-pick best version per job

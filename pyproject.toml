@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "jobtailor"
-version = "0.1.0"
+version = "0.2.0"
 description = "Your daily remote job application assistant. Finds remote jobs, tailors your resume to each one, exports PDFs, and prepares applications for you to submit."
 readme = "README.md"
 license = "MIT"
@@ -12,7 +12,7 @@ requires-python = ">=3.11"
 authors = [
     { name = "mueedbhat-create" },
 ]
-keywords = ["job", "resume", "automation", "ai", "latex", "tailoring"]
+keywords = ["job", "resume", "automation", "ai", "latex", "tailoring", "scoring", "analytics"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
