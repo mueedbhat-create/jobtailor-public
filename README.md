@@ -40,7 +40,7 @@ experience. Nothing can be invented, and the PDF can't break.
 
 ## How it works
 
-1. **Find jobs** - Wellfound, RemoteOK, HN "Who is hiring", Freehire, LinkedIn, Internshala (remote only)
+1. **Find jobs** - Himalayas, Wellfound, RemoteOK, HN "Who is hiring", Freehire, LinkedIn, Internshala (remote only), newest first; listings older than `max_age_days` (21) and ones seen on earlier days are skipped for free
 2. **Filter for free** - title/location rules and already-applied URLs, no AI
 3. **Form check** - opens each job in ego-browser and keeps only ones with a fillable form
 4. **One AI call per job** - fit + tailoring + note (see above)

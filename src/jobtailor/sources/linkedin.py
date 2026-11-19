@@ -67,6 +67,7 @@ class LinkedInSource(SourceAdapter):
                 continue
             company_el = card.select_one(".base-search-card__subtitle")
             location_el = card.select_one(".job-search-card__location")
+            time_el = card.select_one("time[datetime]")
             leads.append(
                 JobLead(
                     url=self._clean_url(anchor.get("href", "")),
@@ -75,6 +76,7 @@ class LinkedInSource(SourceAdapter):
                     source=self.name,
                     remote=True,
                     location=(location_el.get_text(" ", strip=True) if location_el else "")[:80],
+                    posted=(time_el.get("datetime", "") if time_el else "")[:10],
                 )
             )
         return leads

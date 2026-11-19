@@ -16,6 +16,8 @@ class JobLead:
     source: str
     remote: bool = True
     location: str = ""
+    posted: str = ""  # ISO date the listing was posted, "" if the source doesn't say
+    description: str = ""  # full job text when the source provides it (skips page extraction)
 
     def canonical_url(self) -> str:
         """Strip common tracking params for dedup purposes."""

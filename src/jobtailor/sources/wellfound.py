@@ -72,11 +72,17 @@ class WellfoundSource(SourceAdapter):
 
     @staticmethod
     def _slug_for(keyword: str) -> str:
+        """Map a search phrase to a Wellfound role page (checked 2026-11-19).
+
+        AI/automation searches go to operations, never to the engineer page.
+        """
         k = keyword.lower()
-        if "marketing" in k or "growth" in k:
-            return "marketing"
-        if "automation" in k or "ai" in k or "engineer" in k:
+        if "engineer" in k or "developer" in k:
             return "engineer"
-        if "performance" in k or "digital" in k:
-            return "marketing"
+        if "automation" in k or "ai" in k.split() or "operations" in k:
+            return "operations-manager"
+        if "performance" in k or "digital" in k or "paid" in k or "seo" in k:
+            return "digital-marketing"
+        if "manager" in k:
+            return "marketing-manager"
         return "marketing"

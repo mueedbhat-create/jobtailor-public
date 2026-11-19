@@ -80,6 +80,7 @@ class DiscoveryConfig:
             "remoteok": True,
             "weworkremotely": True,
             "hn_hiring": True,
+            "himalayas": True,
             "internshala": False,
         }
     )
@@ -88,6 +89,7 @@ class DiscoveryConfig:
     exclude_title_keywords: list[str] = field(default_factory=list)
     skip_engineer_specific: bool = True
     only_new_each_day: bool = True  # ignore listings already seen on an earlier day
+    max_age_days: int = 21  # skip listings posted longer ago than this (0 = no limit)
 
 
 @dataclass
@@ -161,6 +163,7 @@ def load_config(path: str | Path) -> Config:
     ]
     cfg.discovery.skip_engineer_specific = bool(disc.get("skip_engineer_specific", True))
     cfg.discovery.only_new_each_day = bool(disc.get("only_new_each_day", True))
+    cfg.discovery.max_age_days = int(disc.get("max_age_days", 21))
 
     # Resume
     res = raw.get("resume", {})

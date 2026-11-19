@@ -104,6 +104,8 @@ class RemoteOKSource(SourceAdapter):
                         source=self.name,
                         remote=True,
                         location=item.get("location", "Remote"),
+                        posted=str(item.get("date") or "")[:10],
+                        description=str(item.get("description") or ""),
                     )
                 )
         return leads

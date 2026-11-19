@@ -123,13 +123,34 @@ class ScraplingExtractor:
         return found
 
 
+def html_to_text(html: str) -> str:
+    """Job-board HTML -> plain text with one line per block."""
+    import html as _html
+
+    t = re.sub(r"(?is)<(script|style)[^>]*>.*?</\1>", " ", html or "")
+    t = re.sub(r"(?i)<br\s*/?>|</(p|div|li|h[1-6]|ul|ol|tr)>", "\n", t)
+    t = re.sub(r"(?i)<li[^>]*>", "\n- ", t)
+    t = re.sub(r"<[^>]+>", " ", t)
+    t = _html.unescape(t)
+    t = re.sub(r"[ \t\xa0]+", " ", t)
+    return re.sub(r"\n\s*\n+", "\n", t).strip()
+
+
 def extract_all(
     leads: list[JobLead], extractor: ScraplingExtractor | None = None
 ) -> list[JobDescription]:
     """Extract JDs for all leads, isolating failures per lead."""
-    extractor = extractor or ScraplingExtractor()
     results: list[JobDescription] = []
     for lead in leads:
+        if len(lead.description or "") >= 400:
+            # The job board already gave us the full text: no page fetch needed.
+            text = html_to_text(lead.description)
+            results.append(JobDescription(url=lead.url, company=lead.company, title=lead.title,
+                                          description=text,
+                                          keywords=ScraplingExtractor._extract_keywords(text)))
+            continue
+        if extractor is None:
+            extractor = ScraplingExtractor()
         try:
             results.append(extractor.extract(lead))
         except Exception as exc:  # noqa: BLE001 - per-lead isolation

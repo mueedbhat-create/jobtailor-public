@@ -363,7 +363,10 @@ _RULE_LOC = ("it restricts applicants to other countries/regions (remote-anywher
 
 
 def rules(skip_engineering: bool = True) -> str:
-    return f"SKIP if: {_RULE_ENG if skip_engineering else ''}{_RULE_LOC}. Otherwise APPLY."
+    fit = (" APPLY to marketing/growth/content roles AND to AI-automation or workflow roles "
+           "(n8n, Zapier, Make, prompts, AI agents) that do not need a software engineer."
+           if skip_engineering else " Otherwise APPLY.")
+    return f"SKIP if: {_RULE_ENG if skip_engineering else ''}{_RULE_LOC}.{fit}"
 
 
 RULES = rules(True)

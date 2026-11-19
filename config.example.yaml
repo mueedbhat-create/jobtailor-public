@@ -45,6 +45,7 @@ discovery:
   max_per_query: 5
   max_per_company: 3
   only_new_each_day: true        # each run only handles listings first seen today
+  max_age_days: 21               # skip listings posted longer ago (checked before the browser)
   skip_engineer_specific: false  # true = skip engineering/developer roles (checked in
                                  # code first, then in the same single AI call)
 

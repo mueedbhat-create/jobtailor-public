@@ -14,7 +14,7 @@ import httpx
 from jobtailor.models import JobLead
 from jobtailor.sources.base import SourceAdapter
 
-HN_ALGOLIA_SEARCH = "https://hn.algolia.com/api/v1/search"
+HN_ALGOLIA_SEARCH = "https://hn.algolia.com/api/v1/search_by_date"  # newest first
 HN_ITEM_URL = "https://hacker-news.firebaseio.com/v0/item/{}.json"
 
 
@@ -68,8 +68,8 @@ class HNWhoIsHiringSource(SourceAdapter):
             HN_ALGOLIA_SEARCH,
             params={
                 "query": "Ask HN: Who is hiring?",
-                "tags": "story",
-                "numericFilters": "created_at_i>1700000000",
+                "tags": "story,author_whoishiring",
+                "hitsPerPage": 5,
             },
         )
         resp.raise_for_status()
@@ -132,6 +132,10 @@ class HNWhoIsHiringSource(SourceAdapter):
 
         url = f"https://news.ycombinator.com/item?id={comment['id']}"
 
+        posted = ""
+        if isinstance(comment.get("time"), (int, float)):
+            import datetime as _dt
+            posted = _dt.datetime.fromtimestamp(comment["time"], _dt.timezone.utc).date().isoformat()
         return JobLead(
             url=url,
             company=company[:80],
@@ -139,6 +143,8 @@ class HNWhoIsHiringSource(SourceAdapter):
             source=self.name,
             remote=remote,
             location=location[:80],
+            posted=posted,
+            description=text,
         )
 
     @staticmethod

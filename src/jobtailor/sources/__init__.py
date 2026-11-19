@@ -7,6 +7,7 @@ from jobtailor.sources.adzuna import AdzunaSource
 from jobtailor.sources.base import SourceAdapter
 from jobtailor.sources.dailyremote import DailyRemoteSource
 from jobtailor.sources.freehire import FreehireSource
+from jobtailor.sources.himalayas import HimalayasSource
 from jobtailor.sources.hn_hiring import HNWhoIsHiringSource
 from jobtailor.sources.internshala import InternshalaSource
 from jobtailor.sources.linkedin import LinkedInSource
@@ -27,6 +28,7 @@ _SOURCES: dict[str, type[SourceAdapter]] = {
     "simplyhired": SimplyHiredSource,
     "freehire": FreehireSource,
     "hn_hiring": HNWhoIsHiringSource,
+    "himalayas": HimalayasSource,
     "internshala": InternshalaSource,
 }
 
@@ -50,6 +52,10 @@ def build_source(name: str, config: Config) -> SourceAdapter:
     cls = _SOURCES[name]
     if name == "adzuna":
         return cls(config.adzuna)
+    if name == "himalayas":
+        # Only jobs open to the candidate's country (or worldwide if unknown).
+        country = (config.applicant.location or "").split(",")[-1].strip()
+        return cls(country=country)
     return cls()
 
 

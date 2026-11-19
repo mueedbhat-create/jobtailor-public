@@ -182,3 +182,31 @@ def test_only_listings_first_seen_today(tmp_path):
     (leads / f"{today}.json").write_text(json.dumps({"leads": [{"url": "https://j/new"}]}))
     (leads / "fresh.json").write_text("not a dated file")
     assert _urls_seen_before_today(leads) == {"https://j/old"}
+
+
+def test_listing_age_checks():
+    import datetime as dt
+
+    from jobtailor.models import JobLead
+    from jobtailor.prefilter import stale_text, too_old
+
+    today = dt.date(2026, 11, 20)
+    lead = lambda posted: JobLead("u", "c", "Marketing Manager", "s", posted=posted)  # noqa: E731
+    assert too_old(lead("2026-10-01"), 21, today)
+    assert too_old(lead("2026-11-10"), 21, today) == ""
+    assert too_old(lead(""), 21, today) == ""  # unknown date: keep, check text later
+    assert stale_text("cancan on May 1, 2024 | parent", 21, today)
+    assert stale_text("Posted November 12, 2026. Founded 2019.", 21, today) == ""
+    assert stale_text("no dates here", 21, today) == ""
+
+
+def test_himalayas_lead_parsing():
+    from jobtailor.sources.himalayas import HimalayasSource
+
+    lead = HimalayasSource()._to_lead({
+        "title": "Digital Marketing Manager", "companyName": "Acme", "pubDate": 1795046400,
+        "applicationLink": "https://himalayas.app/companies/acme/jobs/dmm",
+        "locationRestrictions": ["India"], "description": "<p>Run campaigns</p>"})
+    assert lead.posted == "2026-11-19" and lead.location == "India"
+    assert lead.description.startswith("<p>")
+    assert HimalayasSource()._to_lead({"title": "x"}) is None

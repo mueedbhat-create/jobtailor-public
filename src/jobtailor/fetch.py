@@ -97,6 +97,7 @@ class LeadFetcher:
             "source": lead.source,
             "remote": lead.remote,
             "location": lead.location,
+            "posted": lead.posted,
         }
 
 
@@ -114,6 +115,7 @@ def load_leads_from_cache(path: str | Path) -> list[JobLead]:
             source=item["source"],
             remote=item.get("remote", True),
             location=item.get("location", ""),
+            posted=item.get("posted", ""),
         )
         for item in data.get("leads", [])
     ]

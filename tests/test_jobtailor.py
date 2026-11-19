@@ -112,8 +112,9 @@ class TestAdzuna:
 
 class TestWellfound:
     def test_slug_mapping(self):
-        assert WellfoundSource._slug_for("Performance Marketing") == "marketing"
+        assert WellfoundSource._slug_for("Performance Marketing") == "digital-marketing"
         assert WellfoundSource._slug_for("AI Automation Engineer") == "engineer"
+        assert WellfoundSource._slug_for("AI Automation") == "operations-manager"  # never engineer
         assert WellfoundSource._slug_for("Growth") == "marketing"
 
     def test_parse_remote_cards(self):

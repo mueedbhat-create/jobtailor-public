@@ -71,4 +71,6 @@ class FreehireSource(SourceAdapter):
             source=self.name,
             remote=remote,
             location=str(item.get("location") or ""),
+            posted=str(item.get("posted_at") or item.get("created_at") or "")[:10],
+            description=str(item.get("description") or ""),
         )

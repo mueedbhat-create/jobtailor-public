@@ -552,6 +552,23 @@ def _run_pipeline_body(cfg, limit, apply_mode, queries, out, resume, echo,
         echo("  Nothing left after the pre-filter.")
         return
 
+    # 1.6 Too old (free): listings posted more than max_age_days ago are dead
+    #     ends - skip them before the browser step.
+    max_age = getattr(cfg.discovery, "max_age_days", 0)
+    if max_age:
+        from jobtailor.prefilter import too_old
+
+        aged = [(lead, too_old(lead, max_age)) for lead in kept]
+        old_ones = [(lead, why) for lead, why in aged if why]
+        kept = [lead for lead, why in aged if not why]
+        stats["llm_calls_saved"] += len(old_ones)
+        echo(f"[1.6/5] Posted in the last {max_age} days: {len(kept)} kept, {len(old_ones)} too old")
+        if not kept:
+            echo("  Nothing recent left.")
+            return
+        # Newest first; undated listings after dated ones.
+        kept.sort(key=lambda lead: lead.posted or "0000", reverse=True)
+
     # 1.7 Form check in ego-browser (no tokens): only jobs with a fillable
     #     application form go on to the fit gate and tailoring.
     echo(f"[1.7/5] Checking application forms in ego-browser (want {limit})...")
@@ -575,6 +592,19 @@ def _run_pipeline_body(cfg, limit, apply_mode, queries, out, resume, echo,
     echo(f"[2/5] Extracting JDs ({len(ready)} jobs)...")
     jds = extract_all([lead for lead, _ in ready], ScraplingExtractor())
     echo(f"  {len(jds)} JDs extracted")
+    if max_age:
+        from jobtailor.prefilter import stale_text
+
+        dated = {lead.url for lead, _ in ready if lead.posted}
+        fresh_jds = []
+        for jd in jds:
+            why = "" if jd.url in dated else stale_text(jd.description, max_age)
+            if why:
+                echo(f"  [old    ] {jd.title} @ {jd.company} - {why}")
+                queue.record(jd.url, "skipped", note=f"too old: {why}", title=jd.title, company=jd.company)
+            else:
+                fresh_jds.append(jd)
+        jds = fresh_jds
     if not jds:
         echo("  Extraction failed for all leads.")
         return
