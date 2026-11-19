@@ -30,10 +30,10 @@ export const seedApplications: ApplicationEntry[] = (
     remote: true,
     location: "Remote (US)",
     fields: {
-      full_name: "Mueed Bhat",
-      email: "mueed@example.com",
+      full_name: "Alex Doe",
+      email: "alex@example.com",
       phone: "+91 98765 43210",
-      linkedin: "linkedin.com/in/mueedbhat",
+      linkedin: "linkedin.com/in/alexdoe",
     },
     tracking: {
       status: "offer",
@@ -73,9 +73,9 @@ export const seedApplications: ApplicationEntry[] = (
     remote: true,
     location: "Remote (Global)",
     fields: {
-      full_name: "Mueed Bhat",
-      email: "mueed@example.com",
-      website: "mueed.dev",
+      full_name: "Alex Doe",
+      email: "alex@example.com",
+      website: "alexdoe.dev",
     },
     tracking: {
       status: "interview",
@@ -131,8 +131,8 @@ export const seedApplications: ApplicationEntry[] = (
     remote: false,
     location: "New York, NY",
     fields: {
-      full_name: "Mueed Bhat",
-      email: "mueed@example.com",
+      full_name: "Alex Doe",
+      email: "alex@example.com",
       phone: "+91 98765 43210",
     },
     tracking: {
@@ -181,8 +181,8 @@ export const seedApplications: ApplicationEntry[] = (
     remote: false,
     location: "San Francisco, CA",
     fields: {
-      email: "mueed@example.com",
-      linkedin: "linkedin.com/in/mueedbhat",
+      email: "alex@example.com",
+      linkedin: "linkedin.com/in/alexdoe",
     },
     tracking: {
       status: "rejected",
@@ -255,8 +255,8 @@ export const seedApplications: ApplicationEntry[] = (
     remote: true,
     location: "Remote (US)",
     fields: {
-      full_name: "Mueed Bhat",
-      email: "mueed@example.com",
+      full_name: "Alex Doe",
+      email: "alex@example.com",
     },
     tracking: {
       status: "interview",
@@ -304,8 +304,8 @@ export const seedApplications: ApplicationEntry[] = (
     remote: true,
     location: "Remote (Global)",
     fields: {
-      email: "mueed@example.com",
-      website: "mueed.dev",
+      email: "alex@example.com",
+      website: "alexdoe.dev",
     },
     tracking: {
       status: "confirmation",
@@ -337,8 +337,8 @@ export const seedApplications: ApplicationEntry[] = (
     remote: false,
     location: "San Francisco, CA",
     fields: {
-      full_name: "Mueed Bhat",
-      email: "mueed@example.com",
+      full_name: "Alex Doe",
+      email: "alex@example.com",
     },
     tracking: {
       status: "rejected",

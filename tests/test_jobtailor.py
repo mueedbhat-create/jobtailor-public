@@ -192,61 +192,69 @@ class TestTailor:
         assert slug.startswith("apply/")
         assert "/" not in slug.removeprefix("apply/")
 
+    _EXP = (
+        "\\cventry\n    {Growth Marketer}\n    {Acme}\n    {Remote}\n    {2020 - Present}\n    {\n"
+        "      \\begin{cvitems}\n"
+        "        \\item{Ran \\textbf{n8n} automations for lead capture and follow-up.}\n"
+        "        \\item{Wrote blogs that lifted engagement by \\textbf{30\\%}.}\n"
+        "      \\end{cvitems}\n    }\n"
+    )
+
+    def _make_real_resume(self, root: Path) -> Path:
+        resume_dir = root / "resume"
+        (resume_dir / "resume").mkdir(parents=True)
+        (resume_dir / "resume.tex").write_text("\\cvsection{Experience}\n")
+        (resume_dir / "resume" / "experience.tex").write_text(
+            "\\begin{cventries}\n" + self._EXP + "\\end{cventries}\n")
+        (resume_dir / "resume" / "skills.tex").write_text(
+            "\\begin{cvskills}\n\\cvskill\n    {Writing}\n    {Blogs, Copywriting}\n\n\\end{cvskills}\n")
+        return resume_dir
+
+    def _jd2(self):
+        return JobDescription("https://x.com/job/2", "Acme AI", "Growth Marketing Specialist",
+                              "Requirements:\nCopywriting and n8n automation for growth.", [])
+
     def test_tailor_writes_copy_and_leaves_original_untouched(self, tmp_path):
-        resume_dir = self._make_resume(tmp_path)
-        originals = {
-            p.name: p.read_text() for p in sorted((resume_dir / "resume").glob("*.tex"))
-        }
+        resume_dir = self._make_real_resume(tmp_path)
+        originals = {p.name: p.read_text() for p in sorted((resume_dir / "resume").glob("*.tex"))}
+        calls = []
 
-        class TailoringLLM:
+        class PlanLLM:
             def generate(self, system, user, workdir="."):
-                for line in user.splitlines():
-                    if line.startswith("CURRENT RESUME SECTION"):
-                        name = line.split("(")[1].split(")")[0].removesuffix(".tex")
-                        current = (Path(workdir) / "resume" / f"{name}.tex").read_text()
-                        return current + "\n% tailored for job\n"
-                return ""
+                calls.append(user)
+                return ('{"apply":true,"why":"fits","order":["E1.2","E1.1"],'
+                        '"skills":{"S1":["Copywriting","Blogs"]},"add_skills":{"S1":["n8n"]}}')
 
-        tailor = ResumeTailor(resume_dir, llm=TailoringLLM(), tailored_dir=tmp_path / "tailored")
-        result = tailor.tailor(self._make_jd())
-
+        tailor = ResumeTailor(resume_dir, llm=PlanLLM(), tailored_dir=tmp_path / "tailored")
+        result = tailor.tailor(self._jd2())
+        assert len(calls) == 1  # one AI call per job
         assert result.branch.startswith("apply/")
-        assert result.job_url == "https://x.com/job/1"
-
-        # original untouched
         for name, text in originals.items():
             assert (resume_dir / "resume" / name).read_text() == text
+        out = tmp_path / "tailored" / result.branch / "resume"
+        exp = (out / "experience.tex").read_text()
+        assert exp.index("engagement") < exp.index("lead capture")  # reordered
+        assert "{n8n, Copywriting, Blogs}" in (out / "skills.tex").read_text()  # surfaced + reordered
+        # second run of the same job is served from cache: no new AI call
+        tailor.tailor(self._jd2())
+        assert len(calls) == 1
 
-        # tailored copy exists and differs
-        tailored = tmp_path / "tailored" / result.branch / "resume" / "experience.tex"
-        assert tailored.exists()
-        assert "% tailored for job" in tailored.read_text()
+    def test_ai_skip_raises_job_skipped(self, tmp_path):
+        from jobtailor.tailor import JobSkipped
 
-        # temp workspace cleaned up
-        leftovers = [p for p in Path(tempfile.gettempdir()).glob("jobtailor-tailor-*")]
-        assert leftovers == []
-
-    def test_identical_content_raises_with_no_output(self, tmp_path):
-        resume_dir = self._make_resume(tmp_path)
-
-        class EchoLLM:
+        class SkipLLM:
             def generate(self, system, user, workdir="."):
-                for line in user.splitlines():
-                    if line.startswith("CURRENT RESUME SECTION"):
-                        name = line.split("(")[1].split(")")[0].removesuffix(".tex")
-                        return (Path(workdir) / "resume" / f"{name}.tex").read_text()
-                return ""
+                return '{"apply": false, "why": "engineering role"}'
 
-        tailor = ResumeTailor(resume_dir, llm=EchoLLM(), tailored_dir=tmp_path / "tailored")
-        with pytest.raises(TailorError):
-            tailor.tailor(self._make_jd())
-
-        assert not (tmp_path / "tailored").exists() or list((tmp_path / "tailored").iterdir()) == []
+        tailor = ResumeTailor(self._make_real_resume(tmp_path), llm=SkipLLM(),
+                              tailored_dir=tmp_path / "tailored")
+        with pytest.raises(JobSkipped):
+            tailor.tailor(self._jd2())
 
     def test_tailor_all_isolates_failures(self, tmp_path):
         from jobtailor.llm import LLMClient
 
-        resume_dir = self._make_resume(tmp_path)
+        resume_dir = self._make_real_resume(tmp_path)
 
         class BrokenLLM(LLMClient):
             def generate(self, system, user, workdir="."):
@@ -254,12 +262,10 @@ class TestTailor:
 
         tailor = ResumeTailor(resume_dir, llm=BrokenLLM(None), tailored_dir=tmp_path / "tailored")
         with pytest.raises(RuntimeError):
-            tailor.tailor(self._make_jd())
-
-        results = tailor_all([self._make_jd()], resume_dir, tailored_dir=tmp_path / "tailored")
-        # tailor_all constructs its own ResumeTailor without our fake LLM, so
-        # this only asserts the isolation contract shape:
-        assert isinstance(results, list)
+            tailor.tailor(self._jd2())
+        results = tailor_all([self._jd2()], resume_dir, tailored_dir=tmp_path / "tailored",
+                             llm=BrokenLLM(None), echo=lambda m: None)
+        assert results == []
 
 
 class TestPdf:
@@ -359,9 +365,14 @@ class TestApply:
         assert len(fb.opened) == 1  # only the first open happened
 
     def test_mark_unknown_raises(self, tmp_path):
-        queue = ApplicationQueue(state_dir=tmp_path, browser=Browser("open"))
+        queue = ApplicationQueue(state_dir=tmp_path, browser=Browser("ego"))
         with pytest.raises(ApplyError):
             queue.mark_submitted("https://x.com/not-in-queue")
+
+    def test_system_browser_mode_disabled(self):
+        # Never open the user's Chrome via macOS `open`.
+        with pytest.raises(ApplyError):
+            Browser("open")
 
     def test_unknown_browser_mode_raises(self):
         with pytest.raises(ApplyError):
@@ -391,20 +402,20 @@ class TestApply:
 
 class TestAutoSubmit:
     def test_profile_as_dict_omits_empty(self):
-        p = ApplicantProfile(full_name="Mueed Bhat", email="mueed@x.com")
+        p = ApplicantProfile(full_name="Alex Doe", email="alex@x.com")
         d = p.as_dict()
-        assert d == {"full_name": "Mueed Bhat", "email": "mueed@x.com"}
+        assert d == {"full_name": "Alex Doe", "email": "alex@x.com"}
 
     def test_apply_missing_pdf_raises(self, tmp_path):
-        sub = AutoSubmitter(ApplicantProfile(full_name="Mueed"))
+        sub = AutoSubmitter(ApplicantProfile(full_name="Alex"))
         with pytest.raises(ApplyError):
             sub.apply("https://x.com/job/1", str(tmp_path / "nope.pdf"))
 
     def test_build_script_contains_profile_and_submit_flag(self):
-        sub = AutoSubmitter(ApplicantProfile(full_name="Mueed", email="m@x.com"))
+        sub = AutoSubmitter(ApplicantProfile(full_name="Alex", email="m@x.com"))
         script = sub._build_script("https://x.com/job/1", "/tmp/r.pdf", submit=True)
         assert "jobtailor-apply" in script
-        assert "Mueed" in script
+        assert "Alex" in script
         assert "m@x.com" in script
         assert "/tmp/r.pdf" in script
         assert "'uploadFile'" in script or "uploadFile" in script

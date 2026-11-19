@@ -41,11 +41,11 @@ discovery:
     careers: false
     mercor: false
     outlier: false
+    internshala: false     # internships-only source; enable via internships.sources
   max_per_query: 5
   max_per_company: 3
-  skip_engineer_specific: true   # LLM gate: skip ONLY jobs specifically seeking
-                                 # an engineer; AI-automation work always applies
-                                 # even when titled "AI Automation Engineer"
+  skip_engineer_specific: false  # true = skip engineering/developer roles (checked in
+                                 # code first, then in the same single AI call)
 
 resume:
   source: "~/resume"      # path to your LaTeX resume dir
@@ -53,8 +53,10 @@ resume:
   compiler: "tectonic"    # PDF compiler
 
 llm:
-  provider: "opencode"    # "opencode" (default, no API key needed) or "openai-compatible"
-  model: ""               # optional; empty = opencode's default model
+  provider: "zen"         # free OpenCode Zen models, called directly - no key, never paid.
+                          # Also: "opencode" (via the CLI, much heavier) or "openai-compatible".
+  model: "deepseek-v4.1-flash-free"   # any model id ending in -free
+  max_tokens_per_run: 30000           # hard cap: the run stops before going over it
 
 apply:
   mode: "human_in_the_loop"   # default; user clicks submit. "full_auto" is opt-in only.
@@ -78,6 +80,20 @@ adzuna:
   app_id: ""              # free key from https://developer.adzuna.com/
   app_key: ""
   country: "in"           # in, us, gb, etc.
+
+internships:
+  enabled: false          # separate pipeline track (jobtailor run-internships)
+  jobs_per_run: 10
+  output_base: "output/internships"
+  # sources: merged over discovery.sources — per-track add/disable without
+  # re-listing the rest. e.g. enable Internshala (WFH + paid only) here so
+  # the full-time jobs track is unaffected:
+  # sources:
+  #   internshala: true
+  queries:
+    - "remote internship AI automation"
+    - "remote internship digital marketing"
+    - "remote internship performance marketing"
 
 gmail:
   enabled: false          # set true once you complete the OAuth flow below

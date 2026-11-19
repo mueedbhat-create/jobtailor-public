@@ -9,6 +9,7 @@ from jobtailor.models import JobLead, TailoredResume
 from jobtailor.sources import build_source, enabled_sources
 from jobtailor.sources.dailyremote import DailyRemoteSource
 from jobtailor.sources.freehire import FreehireSource
+from jobtailor.sources.internshala import InternshalaSource
 from jobtailor.sources.linkedin import LinkedInSource
 from jobtailor.sources.simplyhired import SimplyHiredSource
 
@@ -278,6 +279,7 @@ class TestRegistry:
             ("dailyremote", DailyRemoteSource),
             ("simplyhired", SimplyHiredSource),
             ("freehire", FreehireSource),
+            ("internshala", InternshalaSource),
         ):
             assert isinstance(build_source(name, cfg), cls)
 
@@ -289,3 +291,90 @@ class TestRegistry:
         names = enabled_sources(cfg)
         assert "linkedin" in names
         assert "dailyremote" not in names
+
+    def test_track_override_merges_over_discovery(self):
+        from jobtailor.config import Config
+
+        cfg = Config()
+        cfg.discovery.sources = {"wellfound": True, "internshala": False, "dailyremote": False}
+        # internshala enabled for this track only, others untouched
+        names = enabled_sources(cfg, {"internshala": True})
+        assert "internshala" in names
+        assert "wellfound" in names
+        # track can also disable a source the discovery layer enables
+        assert "dailyremote" not in names
+        names_off = enabled_sources(cfg, {"wellfound": False})
+        assert "wellfound" not in names_off
+        assert "internshala" not in names_off
+
+
+INTERNSHALA_HTML = """
+<html><body>
+<div class="container-fluid individual_internship" id="individual_internship_3305307" data-href='/internship/detail/work-from-home-ai-automation-internship-at-acme-3305307'>
+  <h2 class="job-internship-name"><a class="job-title-href" href="/internship/detail/work-from-home-ai-automation-internship-at-acme-3305307">AI Agent &amp; Automation</a></h2>
+  <p class="company-name">ChemStride</p>
+  <div class="detail-row-1">
+    <div class="row-1-item locations"><span><a>Work from home</a></span></div>
+    <div class="row-1-item"><span class='stipend'>&#8377; 20,000 - 35,000 /month</span></div>
+  </div>
+</div>
+<div class="container-fluid individual_internship" id="individual_internship_1" data-href='/internship/detail/marketing-intern-in-delhi-at-beta-1'>
+  <h2 class="job-internship-name"><a class="job-title-href" href="/internship/detail/marketing-intern-in-delhi-at-beta-1">Marketing Intern</a></h2>
+  <p class="company-name">Beta LLC</p>
+  <div class="detail-row-1">
+    <div class="row-1-item locations"><span><a>Delhi</a> (On-site)</span></div>
+    <div class="row-1-item"><span class='stipend'>&#8377; 10,000 /month</span></div>
+  </div>
+</div>
+<div class="container-fluid individual_internship" id="individual_internship_2" data-href='/internship/detail/work-from-home-content-intern-at-gamma-2'>
+  <h2 class="job-internship-name"><a class="job-title-href" href="/internship/detail/work-from-home-content-intern-at-gamma-2">Content Intern</a></h2>
+  <p class="company-name">Gamma</p>
+  <div class="detail-row-1">
+    <div class="row-1-item locations"><span><a>Work from home</a></span></div>
+    <div class="row-1-item"><span class='stipend'>Unpaid</span></div>
+  </div>
+</div>
+<div class="container-fluid individual_internship" id="individual_internship_3" data-href='/internship/detail/hybrid-social-media-intern-at-delta-3'>
+  <h2 class="job-internship-name"><a class="job-title-href" href="/internship/detail/hybrid-social-media-intern-at-delta-3">Social Media Intern</a></h2>
+  <p class="company-name">Delta</p>
+  <div class="detail-row-1">
+    <div class="row-1-item locations"><span><a>Work from home</a></span></div>
+  </div>
+</div>
+</body></html>
+"""
+
+
+class TestInternshala:
+    def test_parses_wfh_paid_and_skips_onsite_unpaid_missing_stipend(self):
+        src = InternshalaSource(FakeClient(INTERNSHALA_HTML))
+        leads = src._search("ai automation", limit=10)
+        # Beta is on-site, Gamma is Unpaid, Delta has no stipend row -> dropped
+        assert len(leads) == 1
+        lead = leads[0]
+        assert lead.title == "AI Agent & Automation"
+        assert lead.company == "ChemStride"
+        assert lead.source == "internshala"
+        assert lead.remote is True
+        assert lead.location == "Work from home"
+        assert lead.url == "https://internshala.com/internship/detail/work-from-home-ai-automation-internship-at-acme-3305307"
+
+    def test_respects_limit_and_malformed_cards_skipped(self):
+        src = InternshalaSource(FakeClient(INTERNSHALA_HTML))
+        assert len(src._search("x", limit=1)) == 1
+        assert src._parse('<div class="container-fluid individual_internship"></div>', limit=5) == []
+
+    def test_search_url_encodes_keyword(self):
+        client = FakeClient(INTERNSHALA_HTML)
+        InternshalaSource(client)._search("AI Automation", limit=5)
+        assert client.urls[0] == "https://internshala.com/internships/keywords-AI%20Automation/"
+
+    def test_non_200_raises(self):
+        src = InternshalaSource(FakeClient("blocked", status_code=403))
+        with pytest.raises(Exception):
+            src._search("x", limit=5)
+
+    def test_fetch_dedupes_across_queries(self):
+        src = InternshalaSource(FakeClient(INTERNSHALA_HTML))
+        leads = src.fetch(["ai automation", "digital marketing"], [], limit=10)
+        assert len(leads) == 1  # same page result set collapses to one URL

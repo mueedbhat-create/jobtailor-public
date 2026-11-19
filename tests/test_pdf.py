@@ -22,7 +22,7 @@ def tectonic_pdf(tmp_path_factory):
     tex.write_text(
         r"""\documentclass{article}
 \begin{document}
-Mueed Nazir Bhat
+Alex Jordan Doe
 alex@example.com
 +91 9000000001
 Builds AI automation workflows in n8n.
@@ -53,7 +53,7 @@ class TestPdfVerifier:
         report = v.verify(tectonic_pdf)
         assert report["ok"] is True
         assert report["pages"] == 1
-        assert "Mueed" in report["text"]
+        assert "Alex" in report["text"]
 
     def test_flags_missing_contact_term(self, tectonic_pdf):
         v = PdfVerifier(required_terms=["nonexistent@example.com"])
@@ -77,5 +77,5 @@ class TestPdfVerifier:
     def test_extract_text_roundtrip(self, tectonic_pdf):
         v = PdfVerifier()
         text = v.extract_text(tectonic_pdf)
-        assert "Mueed" in text
+        assert "Alex" in text
         assert "n8n" in text

@@ -34,8 +34,11 @@ class ResumeConfig:
 
 @dataclass
 class LLMConfig:
-    provider: str = "opencode"  # "opencode" (default) or "openai-compatible"
-    model: str = ""  # opencode: model name (empty = default); openai-compatible: required
+    provider: str = "zen"  # "zen" (free models, direct), "opencode", "openai-compatible"
+    model: str = ""  # empty = deepseek-v4.1-flash-free on zen
+    max_tokens_per_run: int = 30000  # hard cap per run; the run stops when reached (0 = no cap)
+    fallback: str = ""  # provider used when the primary fails, e.g. "ollama"
+    fallback_model: str = ""
 
 
 @dataclass
@@ -77,6 +80,7 @@ class DiscoveryConfig:
             "remoteok": True,
             "weworkremotely": True,
             "hn_hiring": True,
+            "internshala": False,
         }
     )
     max_per_query: int = 5
@@ -98,6 +102,9 @@ class InternshipConfig:
     queries: list[str] = field(default_factory=list)
     jobs_per_run: int = 10
     output_base: str = "output/internships"
+    # optional per-source overrides merged over discovery.sources
+    # (e.g. {internshala: true} enables Internshala for this track only)
+    sources: dict[str, bool] | None = None
 
 
 @dataclass
@@ -161,8 +168,11 @@ def load_config(path: str | Path) -> Config:
 
     # LLM
     llm = raw.get("llm", {})
-    cfg.llm.provider = llm.get("provider", "opencode")
+    cfg.llm.provider = llm.get("provider", "zen")
+    cfg.llm.max_tokens_per_run = int(llm.get("max_tokens_per_run", cfg.llm.max_tokens_per_run))
     cfg.llm.model = llm.get("model", "")
+    cfg.llm.fallback = llm.get("fallback", "")
+    cfg.llm.fallback_model = llm.get("fallback_model", "")
 
     # Apply
     apply = raw.get("apply", {})
@@ -185,6 +195,9 @@ def load_config(path: str | Path) -> Config:
     cfg.internships.queries = [str(q) for q in intr.get("queries", []) if q]
     cfg.internships.jobs_per_run = int(intr.get("jobs_per_run", 10))
     cfg.internships.output_base = str(intr.get("output_base", "output/internships"))
+    srcs = intr.get("sources")
+    if srcs:
+        cfg.internships.sources = {str(k): bool(v) for k, v in srcs.items()}
 
     # Gmail
     gm = raw.get("gmail") or {}

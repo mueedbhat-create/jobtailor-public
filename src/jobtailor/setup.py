@@ -40,9 +40,9 @@ def check_dependencies() -> list[DepCheck]:
             "needed for pre_fill / full_auto apply modes",
         ),
         DepCheck(
-            "opencode (LLM resume tailoring)",
+            "opencode CLI (optional)",
             shutil.which("opencode") is not None,
-            "needed for the tailor stage",
+            "only needed for llm.provider: opencode; the default 'zen' calls free models directly",
         ),
     ]
     return checks
@@ -71,6 +71,7 @@ _DEFAULT_SOURCES = {
     "careers": False,
     "mercor": False,
     "outlier": False,
+    "internshala": False,
 }
 
 
@@ -97,7 +98,7 @@ def build_config(answers: dict) -> str:
             "format": "latex",
             "compiler": "tectonic",
         },
-        "llm": {"provider": "opencode", "model": ""},
+        "llm": {"provider": "zen", "model": "deepseek-v4.1-flash-free", "max_tokens_per_run": 30000},
         "apply": {"mode": answers.get("apply_mode") or "full_auto"},
         "adzuna": {
             "app_id": answers.get("adzuna_id") or "",

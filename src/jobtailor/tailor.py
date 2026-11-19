@@ -1,47 +1,34 @@
-"""Stage 3: resume tailoring per job description.
+"""Stage 3: tailor the resume for each job with ONE AI call per job.
 
-For each JobDescription:
-  1. Copies the resume directory into a temp workspace — the original
-     resume folder is never written to.
-  2. Calls the LLM (opencode by default) to rewrite resume sections
-     in the copy to match the JD, honoring the guardrail: only rephrase/
-     reorder/emphasize what's genuinely on the resume. Nothing invented.
-  3. Saves the tailored copy to output/tailored/<slug>/ for PDF export.
+For each JobDescription the model is asked once (see ``brain.py``) for:
+fit (apply/skip), bullet and skill order, up to three reworded bullets,
+skills to surface, and - only when the application form has a text box -
+a short note. Code then rebuilds the resume from the user's own LaTeX into
+output/tailored/<slug>/; the original resume folder is never written to.
 
-No git branches are involved. ``TailoredResume.branch`` is kept as the
-field name for compatibility but now holds a plain slug that names the
-tailored directory (and later the PDF file).
+Every reworded bullet, surfaced skill and note is fact-checked against the
+real resume (``truth.violations``); anything that fails keeps the original.
+
+``TailoredResume.branch`` keeps its historical name but holds the slug that
+names the tailored folder (and later the PDF file).
 """
 
 from __future__ import annotations
 
 import re
-import shutil
-import tempfile
 from pathlib import Path
 
-from jobtailor.llm import LLMClient, LLMConfig
+from jobtailor.brain import Plan, ResumeBank, build_resume, check_note, hard_skip, plan_job
+from jobtailor.llm import LLMClient, LLMConfig, QuotaExhausted
 from jobtailor.models import JobDescription, TailoredResume
-
-SYSTEM_PROMPT = """You are an expert resume tailor. You will be given a JOB DESCRIPTION and the current RESUME (LaTeX Awesome-CV template).
-
-Your task: rewrite the resume so it matches the job description and has a higher chance of passing ATS screening.
-
-STRICT RULES (non-negotiable):
-1. ONLY rephrase, reorder, and emphasize information that is ALREADY on the resume. NEVER invent skills, tools, experience, metrics, or achievements that are not present.
-2. If the job asks for something not on the resume, leave it out. Do not fabricate.
-3. Preserve the LaTeX structure and all commands exactly (\\cventry, \\cvsection, \\cvskill, \\cvitems, \\item, bold \\textbf, \\href). Do not change formatting commands or template syntax.
-4. Keep every real fact, number, date, company name, and metric unchanged.
-5. Reorder skills so the most job-relevant ones appear first.
-6. Reword experience bullets to surface job-relevant keywords, keeping them truthful.
-7. Keep the output to the same overall length as the input.
-8. Respond with ONLY the complete rewritten LaTeX file content. No explanation, no markdown fences."""
-
-_SECTIONS = ("experience", "skills", "education")
 
 
 class TailorError(Exception):
     """Raised when tailoring fails."""
+
+
+class JobSkipped(TailorError):
+    """The job is not a fit (decided in code or by the one AI call)."""
 
 
 class ResumeTailor:
@@ -51,41 +38,53 @@ class ResumeTailor:
         llm: LLMClient | None = None,
         llm_config: LLMConfig | None = None,
         tailored_dir: str | Path = "output/tailored",
+        profile: str = "",
+        location: str = "",
+        cache_dir: str | Path | None = None,
+        skip_engineering: bool = True,
     ):
         self._resume_dir = Path(resume_dir).expanduser()
         if not (self._resume_dir / "resume.tex").exists():
             raise TailorError(f"resume.tex not found in {self._resume_dir}")
-        self._llm = llm or LLMClient(llm_config or LLMConfig(provider="opencode"))
+        self._llm = llm or LLMClient(llm_config or LLMConfig())
         self._tailored_dir = Path(tailored_dir)
+        self._bank = ResumeBank.load(self._resume_dir)
+        if not self._bank.entries:
+            raise TailorError("no \\cventry bullets found in resume/experience.tex")
+        self._profile = profile
+        self._location = location
+        self._skip_eng = skip_engineering
+        self._cache_dir = Path(cache_dir) if cache_dir else self._tailored_dir.parent / "cache" / "plans"
+        self.rejected: dict[str, list[str]] = {}  # slug -> fact-check notes
+        self.notes: dict[str, str] = {}  # job url -> verified note
+        self.plans: dict[str, Plan] = {}  # job url -> plan
 
-    def tailor(self, jd: JobDescription) -> TailoredResume:
-        """Tailor the resume to one job on an isolated copy."""
+    @property
+    def reference(self) -> str:
+        return self._bank.reference
+
+    def tailor(self, jd: JobDescription, want_note: bool = False) -> TailoredResume:
+        """Tailor the resume to one job. Raises JobSkipped if it isn't a fit."""
+        reason = hard_skip(jd, self._location, self._skip_eng)
+        if reason:
+            raise JobSkipped(reason)
+        plan = plan_job(self._llm, jd, self._bank, self._profile, self._location,
+                        want_note=want_note, cache_dir=self._cache_dir,
+                        skip_engineering=self._skip_eng)
+        self.plans[jd.url] = plan
+        if not plan.apply:
+            raise JobSkipped(plan.why or "AI judged it not a fit")
         slug = self._slug_for(jd)
-        workspace = Path(tempfile.mkdtemp(prefix="jobtailor-tailor-"))
-        work = workspace / "resume"
-        try:
-            shutil.copytree(
-                self._resume_dir,
-                work,
-                ignore=shutil.ignore_patterns(".git", "resume.pdf", "__pycache__"),
-            )
-            changed = False
-            for section in _SECTIONS:
-                changed |= self._tailor_section(jd, section, work)
-            if not changed:
-                raise TailorError("Tailoring produced identical content.")
-
-            dest = self._tailored_dir / slug
-            dest.parent.mkdir(parents=True, exist_ok=True)
-            if dest.exists():
-                shutil.rmtree(dest)
-            shutil.copytree(work, dest)
-        finally:
-            shutil.rmtree(workspace, ignore_errors=True)
-
+        report = build_resume(self._bank, plan, self._tailored_dir / slug)
+        if report.rejected:
+            self.rejected[slug] = report.rejected
+        if want_note and plan.note:
+            note = check_note(plan.note, jd.title, jd.company, self._bank.reference)
+            if note:
+                self.notes[jd.url] = note
+            else:
+                self.rejected.setdefault(slug, []).append("note: failed the fact-check, left blank")
         return TailoredResume(job_url=jd.url, branch=slug)
-
-    # -- internals ---------------------------------------------------------
 
     @staticmethod
     def _slug_for(jd: JobDescription) -> str:
@@ -94,21 +93,56 @@ class ResumeTailor:
         base = f"apply/{slug}-{company}".strip("-")
         return base[:60] or "apply/untitled"
 
-    def _tailor_section(self, jd: JobDescription, section: str, work: Path) -> bool:
-        path = work / "resume" / f"{section}.tex"
-        current = path.read_text(errors="replace")
-        prompt = (
-            f"JOB DESCRIPTION:\n{jd.description[:12000]}\n\n"
-            f"JOB TITLE: {jd.title}\nCOMPANY: {jd.company}\n"
-            f"KEY SKILLS REQUESTED: {', '.join(jd.keywords)}\n\n"
-            f"CURRENT RESUME SECTION ({section}.tex):\n{current}\n\n"
-            f"Rewrite ONLY this section file ({section}.tex) following the strict rules."
-        )
-        new_text = self._llm.generate(SYSTEM_PROMPT, prompt, workdir=str(work))
-        if not new_text or len(new_text) < len(current) * 0.3:
-            raise TailorError(f"Tailoring produced unusable output for {section}.tex")
-        path.write_text(new_text)
-        return new_text != current
+
+def tailor_jobs(
+    jds: list[JobDescription],
+    resume_dir: str | Path,
+    llm_config: LLMConfig | None = None,
+    tailored_dir: str | Path = "output/tailored",
+    *,
+    llm: LLMClient | None = None,
+    profile: str = "",
+    location: str = "",
+    want_note: set[str] | None = None,
+    skip_engineering: bool = True,
+    echo=print,
+) -> tuple[list[TailoredResume], dict[str, str], list[tuple[JobDescription, str]], ResumeTailor]:
+    """Tailor every job, one at a time. Returns (results, notes, skipped, tailor).
+
+    Sequential on purpose: each job is one small call, and stopping the moment
+    the free allowance or the run's token budget is gone wastes nothing.
+    """
+    tailor = ResumeTailor(resume_dir, llm=llm, llm_config=llm_config, tailored_dir=tailored_dir,
+                          profile=profile, location=location, skip_engineering=skip_engineering)
+    want_note = want_note or set()
+    results: list[TailoredResume] = []
+    skipped: list[tuple[JobDescription, str]] = []
+    stop = ""
+    for n, jd in enumerate(jds, start=1):
+        tag = f"  [{n}/{len(jds)}]"
+        if stop:
+            echo(f"{tag} FAIL {jd.title} @ {jd.company}: {stop}")
+            continue
+        try:
+            res = tailor.tailor(jd, want_note=jd.url in want_note)
+        except JobSkipped as exc:
+            skipped.append((jd, str(exc)))
+            echo(f"{tag} skip {jd.title} @ {jd.company} - {str(exc)[:100]}")
+            continue
+        except QuotaExhausted as exc:
+            stop = str(exc)
+            echo(f"{tag} FAIL {jd.title} @ {jd.company}: {stop}")
+            continue
+        except Exception as exc:  # noqa: BLE001 - per-job isolation
+            echo(f"{tag} FAIL {jd.title} @ {jd.company}: {str(exc)[:160]}")
+            continue
+        results.append(res)
+        plan = tailor.plans.get(jd.url)
+        cached = " (cached, 0 tokens)" if plan and plan.cached else ""
+        echo(f"{tag} ok   {jd.title} @ {jd.company}{cached}")
+        for why in tailor.rejected.get(res.branch, []):
+            echo(f"         [fact-check] {why}")
+    return results, tailor.notes, skipped, tailor
 
 
 def tailor_all(
@@ -116,13 +150,13 @@ def tailor_all(
     resume_dir: str | Path,
     llm_config: LLMConfig | None = None,
     tailored_dir: str | Path = "output/tailored",
+    **kwargs,
 ) -> list[TailoredResume]:
-    """Tailor resume for all JDs, isolating failures per job."""
-    tailor = ResumeTailor(resume_dir, llm_config=llm_config, tailored_dir=tailored_dir)
-    results: list[TailoredResume] = []
-    for jd in jds:
-        try:
-            results.append(tailor.tailor(jd))
-        except Exception as exc:  # noqa: BLE001 - per-job isolation
-            print(f"[warn] tailoring failed for {jd.url}: {exc}")
+    """Tailor resumes for all JDs (compatibility wrapper around tailor_jobs)."""
+    kwargs.setdefault("echo", lambda m: print(m, flush=True))
+    try:
+        results, _, _, _ = tailor_jobs(jds, resume_dir, llm_config, tailored_dir, **kwargs)
+    except TailorError as exc:
+        print(f"  tailoring unavailable: {exc}", flush=True)
+        return []
     return results

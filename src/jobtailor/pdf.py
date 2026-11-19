@@ -116,11 +116,16 @@ class PdfExporter:
         tailored_dir: str | Path = "output/tailored",
         output_dir: str | Path = "output/resumes",
         verifier: PdfVerifier | None = None,
+        original_dir: str | Path | None = None,
     ):
         self._tailored_dir = Path(tailored_dir)
         self._output_dir = Path(output_dir)
         self._tectonic = _resolve_tectonic()
         self._verifier = verifier or PdfVerifier()
+        # Untouched resume (e.g. ~/resume). When the AI breaks a section's
+        # LaTeX, that section is restored from here and the PDF recompiled.
+        self._original_dir = Path(original_dir).expanduser() if original_dir else None
+        self.repaired: dict[str, list[str]] = {}
 
     def export(self, result: TailoredResume) -> Path:
         """Compile the tailored resume for `result.branch` into a PDF.
@@ -133,12 +138,16 @@ class PdfExporter:
         if not (src / "resume.tex").exists():
             raise PdfError(f"No tailored resume found at {src}")
 
-        self._run(self._tectonic, "resume.tex", cwd=src)
         pdf = src / "resume.pdf"
+        dest = self._output_dir / f"{result.branch}.pdf"
+        # Never let a stale PDF from an earlier run stand in for this one.
+        pdf.unlink(missing_ok=True)
+        dest.unlink(missing_ok=True)
+
+        self._compile_with_repair(src, result.branch)
         if not pdf.exists():
             raise PdfError(f"Tectonic produced no resume.pdf for {result.branch}")
 
-        dest = self._output_dir / f"{result.branch}.pdf"
         dest.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(pdf, dest)
 
@@ -157,6 +166,30 @@ class PdfExporter:
                 f"  [warn] {result.branch}: ATS text layer missing contact terms: "
                 f"{', '.join(report['missing'])}"
             )
+
+    def _compile_with_repair(self, src: Path, branch: str, max_repairs: int = 3) -> None:
+        """Compile; if a tailored section broke the LaTeX, restore that section
+        from the original resume and retry (keeps the other tailored sections)."""
+        import re
+
+        for _ in range(max_repairs + 1):
+            try:
+                self._run(self._tectonic, "resume.tex", cwd=src)
+                return
+            except subprocess.CalledProcessError as exc:
+                log = f"{exc.stdout or ''}\n{exc.stderr or ''}"
+                if not self._original_dir:
+                    raise PdfError(f"LaTeX compile failed for {branch}: {_tail(log)}") from exc
+                m = (re.search(r"error:\s*(resume/[\w-]+\.tex):\d+", log)
+                     or re.search(r"(resume/[\w-]+\.tex):\d+:.*(?:error|Error|!)", log))
+                section = m.group(1) if m else None
+                orig = self._original_dir / section if section else None
+                already = self.repaired.setdefault(branch, [])
+                if not section or section in already or not orig or not orig.exists():
+                    raise PdfError(f"LaTeX compile failed for {branch}: {_tail(log)}") from exc
+                shutil.copy2(orig, src / section)
+                already.append(section)
+        raise PdfError(f"LaTeX still failing for {branch} after {max_repairs} repairs")
 
     def _run(self, *cmd: str, cwd: Path) -> None:
         subprocess.run(
@@ -182,3 +215,8 @@ def export_all(
         except Exception as exc:  # noqa: BLE001 - per-job isolation
             print(f"[warn] PDF export failed for {result.branch}: {exc}")
     return paths
+
+
+def _tail(log: str, n: int = 300) -> str:
+    lines = [ln for ln in log.splitlines() if "error" in ln.lower() or ln.startswith("!")]
+    return (" | ".join(lines) or log)[-n:]

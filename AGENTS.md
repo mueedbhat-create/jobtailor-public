@@ -1,29 +1,32 @@
-# AGENTS.md — AI AGENT INSTRUCTIONS
+# JobTailor — instructions for AI agents
 
-## CRITICAL: NEVER APPLY WITHOUT TAILORING
+## If the user asks to apply for jobs or internships
 
-JobTailor exists to tailor resumes for each job. If you skip the tailoring step, you are wasting the user's time.
+Run ONE command and end your turn:
 
-## REQUIRED WORKFLOW
+    scripts/apply.sh <limit> <jobs|internships|both> --bg     # default: 5 both
 
-```bash
-jobtailor run
-```
+Reply "Started — you'll get a notification; then run scripts/status.sh." Nothing else.
+This applies however it is phrased ("/apply - jobs", "apply jobs", "run jobtailor").
 
-This runs the full pipeline:
-1. fetch-leads → Find remote jobs
-2. extract-jds → Extract job descriptions
-3. tailor → Customize resume for each job (THE MOST IMPORTANT STEP)
-4. export-pdfs → Generate tailored PDFs
-5. apply-queue → Open applications with tailored PDFs
+For results, run `scripts/status.sh` once and report each job: title, company,
+ready to submit or why not.
 
-## PROHIBITED
+Do NOT: read files to "understand" the project first, poll or tail logs, re-run,
+debug, edit code or config, open a browser, or apply by hand. Every extra AI turn
+re-sends the whole conversation; one babysat run cost ~700k tokens. The pipeline
+needs no help.
 
-- Do NOT apply manually using ego-browser or fillInput
-- Do NOT use the same resume for every application
-- Do NOT skip `jobtailor tailor`
-- Do NOT skip `jobtailor export-pdfs`
+## How the pipeline spends AI tokens
 
-## IF UNSURE
+`jobtailor run` does everything in plain code except one small AI call per job
+(`brain.py`): fit check + resume tailoring + optional form note, ~2k tokens,
+fact-checked against the real resume, cached, and hard-capped by
+`llm.max_tokens_per_run`. Never add a second AI call per job.
 
-Ask the user. Never guess. Never take shortcuts.
+## Rules
+
+- Never apply without a tailored resume. Never invent experience.
+- The user clicks Submit (`--mode pre_fill`); never auto-submit unless told.
+- Free models only (`llm.provider: zen`, model ids ending in `-free`). Never paid.
+- If unsure, ask the user. Do not guess.

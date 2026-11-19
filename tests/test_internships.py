@@ -15,7 +15,7 @@ def config_file(tmp_path):
     p = tmp_path / "config.yaml"
     p.write_text("""
 applicant:
-  full_name: "Mueed"
+  full_name: "Alex"
   email: "m@x.com"
   phone: "+91 9000000001"
   fit_profile: "marketing & AI automation"
@@ -56,6 +56,21 @@ class TestInternshipConfig:
         assert cfg.enabled is False
         assert cfg.queries == []
         assert cfg.jobs_per_run == 10
+        assert cfg.sources is None
+
+    def test_parses_source_overrides(self, config_file):
+        # internships.sources is optional — absent -> None (use discovery.sources as-is)
+        assert load_config(config_file).internships.sources is None
+        p = config_file.parent / "c2.yaml"
+        p.write_text("""
+internships:
+  enabled: true
+  sources:
+    internshala: true
+    linkedin: false
+""")
+        cfg = load_config(p)
+        assert cfg.internships.sources == {"internshala": True, "linkedin": False}
 
     def test_disabled_when_missing(self, tmp_path):
         p = tmp_path / "c.yaml"
@@ -81,17 +96,27 @@ def test_run_pipeline_isolates_output(tmp_path, monkeypatch):
     monkeypatch.setattr("jobtailor.cli.tailor_all", lambda *a, **k: [])
 
     class FakeLead:
-        def run(self, queries=None):
+        def run(self, queries=None, sources=None):
             captured["queries"] = queries
+            captured["sources"] = sources
             return FakeLeadBatch()
 
     from jobtailor.config import Config, QueryConfig
 
     cfg = Config()
     cfg.discovery.queries = [QueryConfig(keyword="full time")]
-    run_pipeline(cfg, limit=3, mode="pre_fill", queries=["paid internship AI"], output_base=str(tmp_path / "intern"), echo=logs.append)
-    # fetch ran with the internship queries
+    run_pipeline(
+        cfg,
+        limit=3,
+        mode="pre_fill",
+        queries=["paid internship AI"],
+        output_base=str(tmp_path / "intern"),
+        echo=logs.append,
+        sources=["internshala", "wellfound"],
+    )
+    # fetch ran with the internship queries and the per-track source list
     assert captured["queries"] == ["paid internship AI"]
+    assert captured["sources"] == ["internshala", "wellfound"]
 
 
 def test_run_pipeline_passes_queries_none_for_default(monkeypatch, tmp_path):
@@ -104,7 +129,7 @@ def test_run_pipeline_passes_queries_none_for_default(monkeypatch, tmp_path):
         source_counts = {}
 
     class FakeLead:
-        def run(self, queries=None):
+        def run(self, queries=None, sources=None):
             captured["queries"] = queries
             return FakeLeadBatch()
 

@@ -44,7 +44,7 @@ def _seed_apps(out: Path):
             "status": "submitted",
             "branch": "apply/ai-engineer-acme",
             "pdf": "/tmp/apply.pdf",
-            "fields": {"email": "m@x.com", "full_name": "Mueed"},
+            "fields": {"email": "m@x.com", "full_name": "Alex"},
             "note": "submitted; matched fields: email=m@x.com",
             "applied_at": "2026-08-20",
         },

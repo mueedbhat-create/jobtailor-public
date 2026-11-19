@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import glob
+import re
 import shutil
+import subprocess
 from pathlib import Path
 
 import typer
@@ -14,7 +16,7 @@ from jobtailor.fetch import LeadFetcher, load_leads_from_cache
 from jobtailor.llm import LLMConfig
 from jobtailor.models import JobDescription
 from jobtailor.pdf import PdfVerifier, export_all
-from jobtailor.tailor import tailor_all
+from jobtailor.tailor import tailor_all, tailor_jobs
 
 app = typer.Typer(add_completion=False)
 
@@ -142,7 +144,9 @@ def extract_jds(
     outdir.mkdir(parents=True, exist_ok=True)
     written = 0
     for jd in jds:
-        path = outdir / f"{written}_{jd.company.replace(' ', '_')}_{jd.title.replace(' ', '_')[:40]}.json"
+        company = re.sub(r"[^A-Za-z0-9]+", "_", jd.company).strip("_")
+        title = re.sub(r"[^A-Za-z0-9]+", "_", jd.title).strip("_")[:40]
+        path = outdir / f"{written}_{company}_{title}.json"
         path.write_text(json.dumps(jd.__dict__, indent=2))
         written += 1
 
@@ -183,8 +187,12 @@ def tailor(
         )
 
     typer.echo(f"Tailoring resume in {resume} for {len(jds)} jobs...")
-    llm_cfg = LLMConfig(provider=cfg.llm.provider, model=cfg.llm.model)
-    results = tailor_all(jds, resume_dir=resume, llm_config=llm_cfg)
+    from jobtailor.llm import USAGE, set_budget
+
+    set_budget(cfg.llm.max_tokens_per_run)
+    results = tailor_all(jds, resume_dir=resume, llm_config=_llm_config(cfg),
+                         profile=cfg.applicant.fit_profile, location=cfg.applicant.location)
+    typer.echo(f"AI usage: {USAGE.summary()}")
 
     typer.echo(f"Tailored {len(results)}/{len(jds)} resumes:")
     for r in results:
@@ -192,6 +200,11 @@ def tailor(
 
     if results:
         _write_tailored(results)
+
+
+def _llm_config(cfg) -> LLMConfig:
+    return LLMConfig(provider=cfg.llm.provider, model=cfg.llm.model,
+                     fallback=cfg.llm.fallback, fallback_model=cfg.llm.fallback_model)
 
 
 def _write_tailored(results, path="output/tailored.json") -> None:
@@ -253,7 +266,7 @@ def _tailored_slugs() -> list[str]:
 def apply_queue(
     out_dir: str = typer.Option("output/resumes", help="Directory with exported PDFs"),
     state_dir: str = typer.Option("output/applications", help="Application state directory"),
-    browser: str = typer.Option("open", help="Browser: 'open' (default) or 'ego'"),
+    browser: str = typer.Option("ego", help="Browser: 'ego' (ego-browser only)"),
     config: str = typer.Option("config.yaml", help="Path to config.yaml"),
 ):
     """Open each prepared application page for the user to review and submit."""
@@ -377,6 +390,11 @@ def run_internships(
     if not cfg.internships.enabled:
         typer.echo("Internships track is disabled. Set internships.enabled=true in config.yaml.")
         raise typer.Exit(1)
+    sources = None
+    if cfg.internships.sources:
+        from jobtailor.sources import enabled_sources
+
+        sources = enabled_sources(cfg, cfg.internships.sources)
     run_pipeline(
         cfg,
         limit=limit or cfg.internships.jobs_per_run,
@@ -385,6 +403,7 @@ def run_internships(
         output_base=cfg.internships.output_base,
         title_filter="intern",
         echo=typer.echo,
+        sources=sources,
     )
 
 
@@ -396,6 +415,7 @@ def run_pipeline(
     output_base: str,
     echo=None,
     title_filter: str | None = None,
+    sources: list[str] | None = None,
 ) -> None:
     """Run the full pipeline against a given output base + query set.
 
@@ -416,10 +436,57 @@ def run_pipeline(
     out = Path(output_base)
     resume = cfg.resume.source
     apply_mode = mode or cfg.apply.mode
+    track = "Internships" if "intern" in str(output_base) else "Jobs"
+    stats: dict[str, int] = {}
+    from jobtailor.llm import set_budget
+
+    set_budget(getattr(cfg.llm, "max_tokens_per_run", 0))
+    try:
+        _run_pipeline_body(cfg, limit, apply_mode, queries, out, resume, echo,
+                           title_filter, sources, stats)
+    finally:
+        _report_run(track, stats, echo)
+
+
+def _report_run(track: str, stats: dict[str, int], echo) -> None:
+    """Print the run summary and show a macOS notification (never a browser)."""
+    ready = stats.get("prepared", 0) + stats.get("submitted", 0)
+    parts = [f"{ready} ready to submit in ego-browser"]
+    for key, label in (("email_apply", "apply by email"), ("needs_login", "need login"),
+                       ("location_locked", "not open to India"),
+                       ("no_form", "no form"), ("failed", "failed")):
+        if stats.get(key):
+            parts.append(f"{stats[key]} {label}")
+    summary = ", ".join(parts)
+    echo(f"== {track}: {summary}")
+    if stats.get("llm_calls_saved"):
+        echo(f"   (pre-filter + form check skipped {stats['llm_calls_saved']} jobs before any AI call)")
+    from jobtailor.llm import USAGE
+
+    echo(f"== AI usage ({track}): {USAGE.summary()}")
+    try:
+        msg = summary.replace('"', "'")
+        subprocess.run(
+            ["osascript", "-e", f'display notification "{msg}" with title "JobTailor: {track}"'],
+            capture_output=True, timeout=10,
+        )
+    except Exception:  # noqa: BLE001 - a notification must never break a run
+        pass
+
+
+def _run_pipeline_body(cfg, limit, apply_mode, queries, out, resume, echo,
+                       title_filter, sources, stats) -> None:
+    from jobtailor.apply import ApplicantProfile, ApplicationQueue, Browser  # noqa: F401
+    from jobtailor.config import ApplyConfig  # noqa: F401
+    from jobtailor.fetch import LeadFetcher
+    from jobtailor.models import TailoredResume  # noqa: F401
+    from jobtailor.pdf import PdfExporter
+    from jobtailor.prefilter import prefilter_leads
+    from jobtailor.probe import close_probe_space, probe_until
 
     # 1. Fetch leads
     echo("[1/5] Fetching leads...")
-    batch = LeadFetcher(cfg, output_dir=out / "leads").run(queries=queries)
+    batch = LeadFetcher(cfg, output_dir=out / "leads").run(queries=queries, sources=sources)
     if title_filter:
         before = len(batch.leads)
         batch.leads = [
@@ -432,31 +499,74 @@ def run_pipeline(
         echo("  No leads. Check config sources.")
         return
 
-    # 2. Extract JDs (cap at limit)
-    echo(f"[2/5] Extracting JDs ({min(limit, len(batch.leads))} jobs)...")
-    jds = extract_all(batch.leads[:limit], ScraplingExtractor())
+    queue = ApplicationQueue(
+        cfg.apply,
+        out / "applications",
+        browser=Browser("ego"),
+        profile=_applicant_profile(cfg),
+    )
+
+    # 1.5 Free pre-filter (no tokens): target role, not engineering, not
+    #     pinned to another country, and not already handled in an earlier run.
+    known = queue.known_urls()
+    fresh = [lead for lead in batch.leads if lead.url not in known]
+    kept, dropped = prefilter_leads(fresh, cfg.applicant.location)
+    echo(f"[1.5/5] Free pre-filter: {len(kept)} kept, {len(dropped)} dropped, "
+         f"{len(batch.leads) - len(fresh)} already handled")
+    from collections import Counter
+    for reason, n in Counter(r.split(" (")[0] for _, r in dropped).most_common():
+        echo(f"  - {n} {reason}")
+    stats["llm_calls_saved"] = len(dropped)
+    if not kept:
+        echo("  Nothing left after the pre-filter.")
+        return
+
+    # 1.7 Form check in ego-browser (no tokens): only jobs with a fillable
+    #     application form go on to the fit gate and tailoring.
+    echo(f"[1.7/5] Checking application forms in ego-browser (want {limit})...")
+    ready, not_ready = probe_until(kept, want=limit, max_probes=max(limit * 4, limit + 5), echo=echo)
+    close_probe_space()
+    for lead, res in not_ready:
+        if res.status == "error":
+            continue  # transient: try again next run
+        stats[res.status] = stats.get(res.status, 0) + 1
+        note = f"{res.status}: {res.email}" if res.email else res.status
+        queue.record(lead.url, res.status, note=note, form_url=res.form_url,
+                     email=res.email, title=lead.title, company=lead.company)
+    stats["llm_calls_saved"] += len(not_ready)
+    form_urls = {lead.url: res.form_url for lead, res in ready}
+    echo(f"  {len(ready)} with a fillable form, {len(not_ready)} without")
+    if not ready:
+        echo("  No fillable application forms found this run.")
+        return
+
+    # 2. Extract JDs (only for jobs we can actually apply to)
+    echo(f"[2/5] Extracting JDs ({len(ready)} jobs)...")
+    jds = extract_all([lead for lead, _ in ready], ScraplingExtractor())
     echo(f"  {len(jds)} JDs extracted")
     if not jds:
         echo("  Extraction failed for all leads.")
         return
 
-    # 2.5 Fit gate: drop ONLY jobs specifically seeking an engineer
-    if cfg.discovery.skip_engineer_specific:
-        from jobtailor.fit import gate_jds
-        from jobtailor.llm import LLMClient
-
-        echo("[2.5/5] Fit gate (skip only specifically-engineer roles)...")
-        gate_llm = LLMClient(LLMConfig(provider=cfg.llm.provider, model=cfg.llm.model))
-        jds, gate_skipped = gate_jds(jds, gate_llm, cfg.applicant.fit_profile, echo=echo, location=cfg.applicant.location)
-        echo(f"  {len(jds)} fit, {len(gate_skipped)} skipped")
-
-    # 3. Tailor resumes
-    echo("[3/5] Tailoring resumes...")
-    llm_cfg = LLMConfig(provider=cfg.llm.provider, model=cfg.llm.model)
-    results = tailor_all(jds, resume_dir=resume, llm_config=llm_cfg, tailored_dir=out / "tailored")
-    echo(f"  {len(results)} tailored")
+    # 3. One AI call per job: fit check + tailoring + note (only when the form
+    #    has a text box). Code rebuilds the resume from the user's own text and
+    #    fact-checks every change. Sequential; stops at the token budget.
+    echo("[3/5] Fit check + tailoring (1 AI call per job)...")
+    needs_note = {lead.url for lead, res in ready if res.textareas}
+    results, notes, skipped, _ = tailor_jobs(
+        jds, resume, _llm_config(cfg), out / "tailored",
+        profile=cfg.applicant.fit_profile, location=cfg.applicant.location,
+        want_note=needs_note, echo=echo,
+        skip_engineering=cfg.discovery.skip_engineer_specific,
+    )
+    for jd, reason in skipped:
+        # Persist skips so the same URLs aren't re-probed and re-judged.
+        queue.record(jd.url, "skipped", note=f"fit: {reason}"[:300],
+                     title=jd.title, company=jd.company)
+    stats["skipped"] = len(skipped)
+    echo(f"  {len(results)} tailored, {len(skipped)} skipped, {len(notes)} note(s) written")
     if not results:
-        echo("  Tailoring failed for all jobs.")
+        echo("  Nothing tailored.")
         return
     _write_tailored(results, out / "tailored.json")
 
@@ -465,13 +575,19 @@ def run_pipeline(
     a = cfg.applicant
     contact_terms = [t for t in (a.email, a.phone, a.full_name) if t]
     exporter = PdfExporter(out / "tailored", out / "resumes",
-                           verifier=PdfVerifier(contact_terms))
+                           verifier=PdfVerifier(contact_terms), original_dir=resume)
+    exported = 0
     for r in results:
         try:
             exporter.export(r)
+            exported += 1
+            if exporter.repaired.get(r.branch):
+                echo(f"  [repair] {r.branch}: AI broke the LaTeX in "
+                     f"{', '.join(exporter.repaired[r.branch])}; restored from your resume")
         except Exception as exc:  # noqa: BLE001 - per-job isolation
-            echo(f"  [warn] {r.branch}: {exc}")
-    echo(f"  {len(results)} PDFs exported")
+            r.pdf_path = None
+            echo(f"  [fail] {r.branch}: {exc}")
+    echo(f"  {exported}/{len(results)} PDFs exported")
 
     # 5. Apply — human_in_the_loop (open tabs), pre_fill, or full_auto
     echo(f"[5/5] Applying ({apply_mode})...")
@@ -479,20 +595,19 @@ def run_pipeline(
         pdf = out / "resumes" / f"{r.branch}.pdf"
         r.pdf_path = pdf if pdf.exists() else None
 
-    queue = ApplicationQueue(
-        cfg.apply,
-        out / "applications",
-        browser=Browser("ego" if apply_mode != "human_in_the_loop" else "open"),
-        profile=_applicant_profile(cfg),
-    )
+    def _count(summaries):
+        for s_ in summaries:
+            stats[s_["status"]] = stats.get(s_["status"], 0) + 1
 
     if apply_mode == "human_in_the_loop":
         opened = queue.prepare(results)
-        echo(f"  Opened {len(opened)} pages. Review each and click Submit.")
+        stats["prepared"] = stats.get("prepared", 0) + len(opened)
+        echo(f"  Opened {len(opened)} pages in ego-browser. Review each and click Submit.")
         echo("Run 'jobtailor apply-mark <url> submitted' as you go, "
              "or 'jobtailor apply-status' to track progress.")
     elif apply_mode == "pre_fill":
-        summaries = queue.auto_apply(results, submit=False)
+        summaries = queue.auto_apply(results, submit=False, form_urls=form_urls, notes=notes)
+        _count(summaries)
         for s in summaries:
             echo(f"  [{s['status']:<10}] {s['url']}")
             if s.get("note"):
@@ -502,7 +617,8 @@ def run_pipeline(
 
         source_map = {lead.url: lead.source for lead in batch.leads}
         auto_resumes, manual_resumes = split_never_auto(results, source_map)
-        summaries = queue.auto_apply(auto_resumes, submit=True)
+        summaries = queue.auto_apply(auto_resumes, submit=True, form_urls=form_urls, notes=notes)
+        _count(summaries)
         for s in summaries:
             echo(f"  [{s['status']:<10}] {s['url']}")
             if s.get("note"):

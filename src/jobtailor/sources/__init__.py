@@ -8,6 +8,7 @@ from jobtailor.sources.base import SourceAdapter
 from jobtailor.sources.dailyremote import DailyRemoteSource
 from jobtailor.sources.freehire import FreehireSource
 from jobtailor.sources.hn_hiring import HNWhoIsHiringSource
+from jobtailor.sources.internshala import InternshalaSource
 from jobtailor.sources.linkedin import LinkedInSource
 from jobtailor.sources.simplyhired import SimplyHiredSource
 from jobtailor.sources.wellfound import WellfoundSource
@@ -26,6 +27,7 @@ _SOURCES: dict[str, type[SourceAdapter]] = {
     "simplyhired": SimplyHiredSource,
     "freehire": FreehireSource,
     "hn_hiring": HNWhoIsHiringSource,
+    "internshala": InternshalaSource,
 }
 
 
@@ -51,7 +53,19 @@ def build_source(name: str, config: Config) -> SourceAdapter:
     return cls()
 
 
-def enabled_sources(config: Config) -> list[str]:
-    """Return source names that are both known and enabled in config."""
+def enabled_sources(
+    config: Config, override: dict[str, bool] | None = None
+) -> list[str]:
+    """Return source names that are both known and enabled in config.
+
+    `override` (e.g. internships.sources) is merged on top of
+    discovery.sources, so a track can add or disable individual sources
+    without re-listing the rest.
+    """
+    sources = dict(config.discovery.sources)
+    if override:
+        sources.update(override)
     all_known = {**_SOURCES, **_SCRAPELING_SOURCES}
-    return [name for name, enabled in config.discovery.sources.items() if enabled and name in all_known]
+    if not (config.adzuna.app_id and config.adzuna.app_key):
+        sources["adzuna"] = False  # needs a free key; skip quietly instead of failing every run
+    return [name for name, enabled in sources.items() if enabled and name in all_known]

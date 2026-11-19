@@ -85,17 +85,20 @@ class ApplicantProfile:
 
 
 class Browser:
-    """Opens job URLs in a browser. Thin wrapper for testability."""
+    """Opens job URLs in ego-browser. Thin wrapper for testability.
 
-    def __init__(self, mode: str = "open"):
+    JobTailor only ever uses ego-browser. There is deliberately no path to
+    the system default browser (macOS `open` -> Chrome): the user's own
+    Chrome must never get tabs opened by the pipeline.
+    """
+
+    def __init__(self, mode: str = "ego"):
+        if mode == "open":
+            raise ApplyError("Opening the system browser is disabled; JobTailor uses ego-browser only")
         self._mode = mode
 
     def open(self, url: str) -> None:
-        if self._mode == "open":
-            if not shutil.which("open"):
-                raise ApplyError("'open' not available on this system")
-            subprocess.run(["open", url], check=True)
-        elif self._mode == "ego":
+        if self._mode == "ego":
             self._ego(f"await openOrReuseTab({url!r}, {{ wait: true, timeout: 20 }})")
         else:
             raise ApplyError(f"Unknown browser mode: {self._mode}")
@@ -137,6 +140,11 @@ class AutoSubmitter:
         if parts:
             base["first_name"] = parts[0]
             base["last_name"] = " ".join(parts[1:]) or parts[0]
+        loc = [p.strip() for p in base.get("location", "").split(",") if p.strip()]
+        if loc:
+            base["city"] = loc[0]
+            base["country"] = loc[-1]
+        self._base = base
         self._fields_json = json.dumps(base)
         self.last_result: dict | None = None
 
@@ -150,121 +158,186 @@ class AutoSubmitter:
             raise ApplyError(result["error"])
         return self._format_note(result)
 
-    def apply_structured(self, url: str, pdf_path: str, submit: bool = False) -> dict:
-        """Same as apply() but returns the raw structured ego-browser result."""
+    def apply_structured(
+        self, url: str, pdf_path: str, submit: bool = False, note: str = ""
+    ) -> dict:
+        """Same as apply() but returns the raw structured ego-browser result.
+
+        `note` fills a cover-note / "why this company" textarea if the form has one.
+        """
         pdf = Path(pdf_path).expanduser().resolve()
         if not pdf.exists():
             return {"error": f"Tailored PDF not found: {pdf}", "url": url}
 
-        script = self._build_script(url, str(pdf), submit)
+        script = self._build_script(url, str(pdf), submit, note=note)
         out = Browser._ego(script)
         result = self._parse_result_dict(out)
         self.last_result = result
         return result
 
-    def _build_script(self, url: str, pdf: str, submit: bool) -> str:
+    def _build_script(self, url: str, pdf: str, submit: bool, note: str = "") -> str:
+        # Browser-side filler. Kept as a plain string (no f-string) so the JS
+        # braces stay readable; values are injected with json.dumps below.
+        fill_js = r"""
+(() => {
+  const profile = __PROFILE__;
+  const vis = (el) => !!(el.offsetParent || el.getClientRects().length);
+  // Same-origin iframes are searched too (cross-origin ATS iframes are
+  // resolved earlier by the probe, which hands us the iframe's own URL).
+  const docs = [document];
+  for (const f of document.querySelectorAll('iframe')) {
+    try { if (f.contentDocument && f.contentDocument.body) docs.push(f.contentDocument); } catch (e) {}
+  }
+  const labelOf = (el) => {
+    const bits = [];
+    if (el.labels) for (const l of el.labels) bits.push(l.innerText);
+    const lb = el.getAttribute('aria-labelledby');
+    if (lb) for (const id of lb.split(/\s+/)) { const n = el.ownerDocument.getElementById(id); if (n) bits.push(n.innerText); }
+    bits.push(el.getAttribute('aria-label') || '', el.placeholder || '');
+    const wrap = el.closest('label');
+    if (wrap) bits.push(wrap.innerText);
+    if (!bits.join('').trim()) {
+      const box = el.closest('div, fieldset, li, p, td');
+      const cap = box && box.querySelector('label, legend, span, strong');
+      if (cap) bits.push(cap.innerText);
+    }
+    return bits.join(' ').replace(/\s+/g, ' ').trim().toLowerCase().slice(0, 200);
+  };
+  // Order matters: first match wins.
+  const RULES = [
+    ['email',      /e-?mail/],
+    ['first_name', /first[\s_-]?name|given[\s_-]?name|forename|\bfname\b/],
+    ['last_name',  /last[\s_-]?name|surname|family[\s_-]?name|\blname\b/],
+    ['full_name',  /full[\s_-]?name|your[\s_-]?name|applicant[\s_-]?name|^name\b|\bname\s*\*?$/],
+    ['phone',      /phone|mobile|contact[\s_-]?number|whatsapp|\btel\b/],
+    ['linkedin',   /linked[\s_-]?in/],
+    ['website',    /website|portfolio|personal[\s_-]?site|github/],
+    ['country',    /\bcountry\b/],
+    ['city',       /\bcity\b|\btown\b/],
+    ['location',   /location|address|where are you based|current[\s_-]?location|\bbased\b/],
+  ];
+  const fire = (el) => {
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+    el.dispatchEvent(new Event('blur', { bubbles: true }));
+  };
+  const setValue = (el, val) => {
+    const proto = el.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+    Object.getOwnPropertyDescriptor(proto, 'value').set.call(el, val);
+    fire(el);
+  };
+  const matched = [], used = new Set();
+  let total = 0, i = 0;
+  for (const doc of docs) {
+    for (const el of doc.querySelectorAll('input, textarea, select')) {
+      i++;
+      const t = (el.type || 'text').toLowerCase();
+      if (['hidden','submit','button','reset','checkbox','radio','file','image','password','search'].includes(t)) continue;
+      if (el.disabled || el.readOnly || !vis(el)) continue;
+      total++;
+      if (el.tagName !== 'SELECT' && (el.value || '').trim()) continue;  // never overwrite
+      const key = (el.name || el.id || ('field' + i));
+      const hay = [(el.name || ''), (el.id || ''), (el.getAttribute('autocomplete') || ''), labelOf(el)]
+        .join(' ').toLowerCase().replace(/[_-]+/g, ' ');
+      let want = null;
+      const NOTE = /cover|interest|why|motivat|\bnote\b|message|tell us|about you|about yourself|additional|anything else|introduc|stand out/;
+      if (el.tagName === 'TEXTAREA') {
+        if (profile.note && (NOTE.test(hay) || !hay.trim())) want = 'note';
+        else if (!/address|location/.test(hay)) continue;  // unknown long-answer question: leave for the user
+      }
+      if (want) {}
+      else if (t === 'email') want = 'email';
+      else if (t === 'tel') want = 'phone';
+      else for (const [k, re] of RULES) { if (re.test(hay)) { want = k; break; } }
+      if (!want || !profile[want]) continue;
+      if (['first_name','last_name','full_name','email','phone','note'].includes(want) && used.has(want)) continue;
+      if (el.tagName === 'SELECT') {
+        const target = String(profile[want]).toLowerCase();
+        const opt = [...el.options].find((o) => o.text.trim().toLowerCase() === target)
+                 || [...el.options].find((o) => o.text.toLowerCase().includes(target));
+        if (!opt) continue;
+        el.value = opt.value; fire(el);
+      } else {
+        setValue(el, profile[want]);
+      }
+      used.add(want);
+      matched.push([key, want === 'note' ? '(note: ' + String(profile[want]).slice(0, 40) + '...)' : profile[want]]);
+    }
+  }
+  // Mark the resume upload (not the cover-letter one) for uploadFile.
+  const files = [...document.querySelectorAll('input[type=file]')];
+  const resume = files.find((f) => /resume|cv|curriculum/i.test([f.name, f.id, labelOf(f), (f.closest('div,fieldset') || {}).innerText || ''].join(' ').slice(0, 300))) || files[0];
+  if (resume) resume.setAttribute('data-jt-resume', '1');
+  return { matched, total, fileInputs: files.length };
+})()
+""".replace("__PROFILE__", json.dumps({**self._base, **({"note": note} if note else {})}))
+        apply_click_js = r"""
+(() => {
+  const vis = (el) => !!(el.offsetParent || el.getClientRects().length);
+  const fields = [...document.querySelectorAll('input, textarea')].filter((el) => vis(el) && !['hidden','submit','button','checkbox','radio','search'].includes((el.type||'').toLowerCase()));
+  if (fields.length >= 2 || document.querySelector('input[type=file]')) return 'form-present';
+  const re = /^(apply now|apply|apply for this job|apply for this position|easy apply|start application|start your application|apply to job|i'?m interested|apply here)$/i;
+  const hit = [...document.querySelectorAll('button, a, [role=button]')].filter(vis)
+    .find((e) => re.test((e.innerText || '').trim().replace(/\s+/g, ' ')));
+  if (hit) { hit.click(); return 'clicked'; }
+  return 'none';
+})()
+"""
+        submit_js = r"""
+(() => {
+  const vis = (el) => !!(el.offsetParent || el.getClientRects().length);
+  const re = /^(submit|submit application|send application|apply|apply now|send)$/i;
+  const btns = [...document.querySelectorAll('button, input[type=submit]')].filter((e) => vis(e) && !e.disabled)
+    .filter((e) => re.test((e.innerText || e.value || '').trim()));
+  if (!btns.length) return false;
+  btns[btns.length - 1].click();
+  return true;
+})()
+"""
+        confirm_js = r"""
+(() => /thank you|thanks for applying|application (has been )?(received|submitted|sent)|we('|’)ve received your application|successfully applied/i
+  .test((document.body && document.body.innerText || '').slice(0, 20000)))()
+"""
         return f"""
 const task = await useOrCreateTaskSpace('jobtailor-apply');
-await openOrReuseTab({url!r}, {{ wait: true, timeout: 30 }});
+await openOrReuseTab({json.dumps(url)}, {{ wait: true, timeout: 30 }});
 await waitForLoad();
+await wait(1.5);
 
-// 0. some boards (Wellfound etc.) gate the form behind an "Apply Now" button
-await js(`(() => {{
-  const re = /^(apply now|apply|apply for this job|easy apply|start application|apply to job)$/i;
-  const els = [...document.querySelectorAll('button, a[role=button]')];
-  const hit = els.find(e => re.test((e.innerText||'').trim()));
-if (hit) hit.click();
-}})()`);
-await waitForElement('input[name="name"], input[type="file"], form input, form textarea', {{ timeout: 15 }});
-await wait(1);
-
-const profile = {self._fields_json};
-
-// 1+2+3. collect fields, match against profile, and fill — all browser-side
-const matched = await js(`(() => {{
-  const profile = {self._fields_json};
-  const FILLS = {{
-    first_name: ['first_name','first-name','firstname','given_name','givenname'],
-    last_name: ['last_name','last-name','lastname','surname','family_name','familyname'],
-    full_name: ['full_name','full-name','fullname','your_name','applicant_name'],
-    email: ['email','e_mail','email_address','emailaddress'],
-    phone: ['phone','phone_number','phonenumber','mobile','contact_number','contactnumber'],
-    location: ['location','city','state','country','address','current_location','currentlocation'],
-    linkedin: ['linkedin','linkedin_url','linkedinurl','linkedin_profile','linkedinprofile','linkedin_handle'],
-    website: ['website','portfolio','personal_website','portfolio_url','portfoliourl','url','github'],
-    headline: ['headline','title','current_title','position_title','desired_role','job_title','current_role'],
-  }};
-  const seen = new Set();
-  const matched = [];
-  const fill = (el, val) => {{
-    const proto = el.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype
-      : el.tagName === 'SELECT' ? HTMLSelectElement.prototype
-      : HTMLInputElement.prototype;
-    const setter = Object.getOwnPropertyDescriptor(proto, 'value').set;
-    setter.call(el, val);
-    el.dispatchEvent(new Event('input', {{ bubbles: true }}));
-    el.dispatchEvent(new Event('change', {{ bubbles: true }}));
-  }};
-  for (const el of document.querySelectorAll('input, textarea, select')) {{
-    const t = (el.type || 'text').toLowerCase();
-    if (['hidden','submit','button','reset','checkbox','radio','file'].includes(t)) continue;
-    if (el.disabled) continue;
-    const rawName = (el.name || el.id || '').toLowerCase();
-    if (!rawName || seen.has(rawName)) continue;
-    seen.add(rawName);
-    const label = (el.closest('label')?.innerText || el.getAttribute('aria-label') || '')
-      .trim().toLowerCase();
-    const hay = [rawName, (el.placeholder||'').toLowerCase(), label].join(' ');
-    let key = null;
-    if (rawName === 'name' && profile.full_name) {{
-      key = 'full_name';
-    }} else {{
-      for (const [k, keys] of Object.entries(FILLS)) {{
-        if (keys.some(kk => hay.includes(kk))) {{ key = k; break; }}
-      }}
-    }}
-    if (key && profile[key]) {{
-      fill(el, profile[key]);
-      matched.push([rawName, profile[key]]);
-    }}
-  }}
-  return matched;
-}})()`);
-
-// 4. upload the tailored PDF to the resume input
-const fileInputs = await js(`(() => {{ const els = document.querySelectorAll('input[type="file"]'); return els.length; }})()`);
-let uploaded = false;
-if (fileInputs > 0) {{
-  await uploadFile('input[type="file"]', {pdf!r});
-  uploaded = true;
+// 0. Only if no form is showing yet: click an "Apply" control to reveal it.
+const reveal = await js({json.dumps(apply_click_js)});
+if (reveal === 'clicked') {{
+  await wait(2.5);
+  try {{ await waitForElement('form input, form textarea, input[type="file"]', {{ timeout: 15 }}); }} catch (e) {{}}
 }}
 
-// 5. submit (only in full_auto)
-let submitted = false;
-let submitHref = '';
-if ({1 if submit else 0}) {{
-  const btn = await js(`(() => {{
-    const els = [...document.querySelectorAll('button, input[type=submit], a')];
-    const re = /(submit|apply|send application|apply now|continue|next)/i;
-    const hit = els.filter(e => {{ const t = (e.innerText||'').trim().toLowerCase(); return re.test(t) && !e.disabled; }});
-    return hit.length ? {{ sel: hit[hit.length-1].tagName === 'A' ? hit[hit.length-1].href : hit[hit.length-1].outerHTML.split('>')[0]+'>' }} : null;
-  }})()`);
-  if (btn) {{
-    if (btn.href) {{ submitHref = btn.href; }}
-    else {{
-      await js(`(() => {{ const els=[...document.querySelectorAll('button')]; const re=/submit|apply|send application/i; const hit=els.filter(e=>re.test((e.innerText||'').trim().toLowerCase())); if(hit.length) hit[hit.length-1].click(); }})()`);
-    }}
-    submitted = true;
-  }}
+// 1. Fill text fields / selects from the applicant profile.
+const res = await js({json.dumps(fill_js)});
+const matched = (res && res.matched) || [];
+
+// 2. Attach the tailored PDF to the resume upload.
+let uploaded = false;
+if (res && res.fileInputs > 0) {{
+  try {{ await uploadFile('input[data-jt-resume="1"]', {json.dumps(pdf)}); uploaded = true; }}
+  catch (e) {{ try {{ await uploadFile('input[type="file"]', {json.dumps(pdf)}); uploaded = true; }} catch (e2) {{}} }}
+}}
+
+// 3. Submit only in full_auto, and only count it if the page confirms.
+let submitted = false, clicked = false;
+if ({1 if submit else 0} && (matched.length > 0 || uploaded)) {{
+  clicked = await js({json.dumps(submit_js)});
+  if (clicked) {{ await wait(4); submitted = await js({json.dumps(confirm_js)}); }}
 }}
 
 cliLog(JSON.stringify({{
-  url: {url!r},
+  url: {json.dumps(url)},
   matched_fields: matched,
+  fields_seen: (res && res.total) || 0,
   pdf_uploaded: uploaded,
-  file_inputs_found: fileInputs,
+  file_inputs_found: (res && res.fileInputs) || 0,
+  submit_clicked: clicked,
   submitted,
-  submit_href: submitHref,
+  submit_href: '',
 }}));
 """
 
@@ -304,10 +377,17 @@ cliLog(JSON.stringify({{
 
     @staticmethod
     def _format_note(result: dict) -> str:
-        status = "submitted" if result.get("submitted") else "pre-filled (not submitted)"
+        if result.get("submitted"):
+            status = "submitted"
+        elif result.get("submit_clicked"):
+            status = "submit clicked (no confirmation seen)"
+        else:
+            status = "pre-filled (not submitted)"
         fields = ", ".join(f"{k}={v}" for k, v in result.get("matched_fields", [])) or "none"
+        seen = result.get("fields_seen")
+        seen_txt = f" of {seen} visible" if seen else ""
         return (
-            f"{status}; matched fields: {fields}; "
+            f"{status}; matched fields{seen_txt}: {fields}; "
             f"PDF uploaded: {result.get('pdf_uploaded')} ({result.get('file_inputs_found')} file input(s) found)"
         )
 
@@ -397,13 +477,24 @@ class ApplicationQueue:
         self._save_state(state)
         return opened
 
-    def auto_apply(self, resumes: list[TailoredResume], submit: bool = False) -> list[dict]:
+    def auto_apply(
+        self,
+        resumes: list[TailoredResume],
+        submit: bool = False,
+        form_urls: dict[str, str] | None = None,
+        notes: dict[str, str] | None = None,
+    ) -> list[dict]:
         """Fill each application form with ego-browser.
 
         `submit=False` -> pre-fill only (user clicks submit).
         `submit=True`  -> full auto-submit.
+        `form_urls` maps job URL -> the real form URL found by the probe.
+        Statuses are honest: "prepared" only if a field was filled or the PDF
+        attached ("no_form" otherwise); "submitted" only if the page confirmed.
         Returns one summary dict per job.
         """
+        form_urls = form_urls or {}
+        notes = notes or {}
         sub = AutoSubmitter(self._profile)
         state = self._load_state()
         results: list[dict] = []
@@ -415,14 +506,24 @@ class ApplicationQueue:
                 fields: dict[str, str] = {}
                 structured = getattr(sub, "apply_structured", None)
                 if structured is not None:
-                    res = structured(resume.job_url, str(resume.pdf_path), submit=submit)
+                    target = form_urls.get(resume.job_url) or resume.job_url
+                    extra = {"note": notes[resume.job_url]} if notes.get(resume.job_url) else {}
+                    res = structured(target, str(resume.pdf_path), submit=submit, **extra)
                     if res.get("error"):
                         raise ApplyError(res["error"])
+                    if (target != resume.job_url and not res.get("matched_fields")
+                            and not res.get("pdf_uploaded")):
+                        # Some boards (e.g. Shine) only show the form when reached
+                        # by clicking Apply: retry from the job page.
+                        res = structured(resume.job_url, str(resume.pdf_path), submit=submit, **extra)
+                        if res.get("error"):
+                            raise ApplyError(res["error"])
                     note = AutoSubmitter._format_note(res)
                     fields = AutoSubmitter.fields_from_result(res)
-                else:
+                    status = self._honest_status(res, submit)
+                else:  # legacy submitter returning only a note
                     note = sub.apply(resume.job_url, str(resume.pdf_path), submit=submit)
-                status = "submitted" if submit else "prepared"
+                    status = "submitted" if submit and note.startswith("submitted") else "prepared"
                 state[resume.job_url] = {
                     "status": status,
                     "branch": resume.branch,
@@ -444,6 +545,29 @@ class ApplicationQueue:
                 results.append({"url": resume.job_url, "status": "failed", "note": str(exc)})
         self._save_state(state)
         return results
+
+    @staticmethod
+    def _honest_status(res: dict, submit: bool) -> str:
+        did_something = bool(res.get("matched_fields")) or bool(res.get("pdf_uploaded"))
+        if not did_something:
+            return "no_form"
+        if submit:
+            if res.get("submitted"):
+                return "submitted"
+            return "submit_unconfirmed" if res.get("submit_clicked") else "prepared"
+        return "prepared"
+
+    def record(self, job_url: str, status: str, note: str = "", **extra) -> None:
+        """Record a job that never reached the form step (probe / pre-filter)."""
+        state = self._load_state()
+        if self._status_of(state, job_url) in ("submitted", "applied"):
+            return
+        state[job_url] = {"status": status, "note": note, "checked_at": date.today().isoformat(), **extra}
+        self._save_state(state)
+
+    def known_urls(self) -> set[str]:
+        """Jobs already handled in any earlier run (don't spend tokens twice)."""
+        return set(self._load_state())
 
     def mark_submitted(self, job_url: str) -> None:
         state = self._load_state()

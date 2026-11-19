@@ -20,11 +20,18 @@ class LeadFetcher:
         self._config = config
         self._output = Path(output_dir).expanduser()
 
-    def run(self, cache: bool = True, queries: list[str] | None = None) -> JobLeadBatch:
+    def run(
+        self,
+        cache: bool = True,
+        queries: list[str] | None = None,
+        sources: list[str] | None = None,
+    ) -> JobLeadBatch:
         """Fetch leads from all enabled sources, dedupe, filter remote.
 
         `queries` overrides the config's discovery queries when provided
         (used by the internships track to fetch internship-specific roles).
+        `sources` overrides the enabled source list when provided (used by
+        tracks with per-source overrides, e.g. internships.sources).
         """
         query_kw = queries if queries is not None else [q.keyword for q in self._config.discovery.queries]
         companies = self._config.discovery.companies
@@ -32,8 +39,9 @@ class LeadFetcher:
         if not query_kw and not companies:
             raise FetchError("No discovery queries or companies configured.")
 
+        source_names = sources if sources is not None else enabled_sources(self._config)
         batch = JobLeadBatch()
-        for name in enabled_sources(self._config):
+        for name in source_names:
             try:
                 adapter = build_source(name, self._config)
                 leads = adapter.fetch(query_kw, companies, limit=self._config.discovery.max_per_query)

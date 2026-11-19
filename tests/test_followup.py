@@ -65,10 +65,10 @@ class TestFindQuiet:
 class TestDraftFollowup:
     def test_includes_company_and_url(self):
         q = QuietApplication(url="https://example.com/jobs/1", company="Acme", applied_at="2026-01-01", days_since=20)
-        msg = draft_followup(q, name="Mueed")
+        msg = draft_followup(q, name="Alex")
         assert "Acme" in msg
         assert "https://example.com/jobs/1" in msg
-        assert "Mueed" in msg
+        assert "Alex" in msg
 
     def test_graceful_without_company(self):
         q = QuietApplication(url="https://example.com/jobs/1", company="", applied_at="2026-01-01", days_since=20)
