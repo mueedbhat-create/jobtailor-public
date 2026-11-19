@@ -58,6 +58,10 @@ class ApplicantConfig:
     website: str = ""
     headline: str = ""
     fit_profile: str = ""
+    # Standard screening answers filled into forms by code (never by AI).
+    # Keys: years_experience, notice_period, expected_salary, current_salary,
+    # needs_sponsorship, start_date, willing_to_relocate. Empty = leave blank.
+    answers: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass
@@ -187,6 +191,8 @@ def load_config(path: str | Path) -> Config:
     ap = raw.get("applicant") or {}
     for f in ("full_name", "email", "phone", "location", "linkedin", "website", "headline", "fit_profile"):
         setattr(cfg.applicant, f, str(ap.get(f, "") or ""))
+    cfg.applicant.answers = {str(k): str(v) for k, v in (ap.get("answers") or {}).items()
+                             if v is not None and str(v).strip()}
 
     # Adzuna
     adz = raw.get("adzuna", {})

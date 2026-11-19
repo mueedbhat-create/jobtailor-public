@@ -45,7 +45,10 @@ experience. Nothing can be invented, and the PDF can't break.
 3. **Form check** - opens each job in ego-browser and keeps only ones with a fillable form
 4. **One AI call per job** - fit + tailoring + note (see above)
 5. **PDF** - compiles the tailored resume with Tectonic
-6. **Pre-fill** - fills the form and attaches the PDF in ego-browser; you click Submit
+6. **Pre-fill** - goes straight to the real form on known hiring systems (Lever, Ashby,
+   Workable, Breezy, Recruitee) or clicks "Apply"/"I'm interested", fills contact details
+   and your standard answers (`applicant.answers`: notice period, sponsorship, ...),
+   attaches the PDF in ego-browser; you click Submit
 
 Run it with `scripts/apply.sh 5 both` (or `jobtailor run --mode pre_fill`) and
 read the result with `scripts/status.sh`. No AI chat is needed at any point.

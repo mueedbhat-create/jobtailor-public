@@ -69,9 +69,9 @@ _INSPECT = r"""
   const hostPath = (s) => { try { const u = new URL(s); return u.hostname + u.pathname; } catch (e) { return ''; } };
   const atsFrame = [...document.querySelectorAll('iframe[src]')].map((f) => f.src)
     .find((s) => ATS.test(hostPath(s)) && hostPath(s) !== hostPath(location.href)) || '';
-  const re = /^(apply now|apply|apply for this job|apply for this position|apply to job|apply on company website|apply on company site|easy apply|start application|start your application|i'?m interested|submit application|apply here)$/i;
+  const re = new RegExp(__APPLY_RE__, 'i');
   const ctl = [...document.querySelectorAll('a, button, [role=button]')].filter(vis)
-    .find((e) => re.test((e.innerText || e.value || '').trim().replace(/\s+/g, ' ')));
+    .find((e) => re.test((e.innerText || e.value || '').trim().replace(/[\u2018\u2019]/g, "'").replace(/\s+/g, ' ').toLowerCase()));
   let applyHref = '', applyText = '';
   if (ctl) {
     applyText = (ctl.innerText || '').trim().slice(0, 40);
@@ -92,10 +92,20 @@ _INSPECT = r"""
 """
 
 
+def _inspect_js() -> str:
+    from jobtailor.ats import APPLY_TEXT_RE
+
+    return _INSPECT.replace("__APPLY_RE__", json.dumps(APPLY_TEXT_RE))
+
+
 def _script(url: str) -> str:
+    from jobtailor.ats import APPLY_TEXT_RE, ats_form_url
+
+    url = ats_form_url(url)
     return f"""
 const URL = {json.dumps(url)};
-const INSPECT = {json.dumps(_INSPECT)};
+const INSPECT = {json.dumps(_inspect_js())};
+const APPLY_RE = new RegExp({json.dumps(APPLY_TEXT_RE)}, "i");
 let task;
 try {{ task = await taskSpace({json.dumps(PROBE_SPACE)}); }}
 catch (e) {{ task = await claimTaskSpace({json.dumps(PROBE_SPACE)}); }}
@@ -125,13 +135,13 @@ try {{
       await page.goto(r.applyHref, {{ timeout: 30000 }});
     }} else {{
       const before = (await task.tabs()).map((t) => t.targetId);
-      await page.evaluate(() => {{
+      await page.evaluate((src) => {{
         const vis = (el) => !!(el.offsetParent || el.getClientRects().length);
-        const re = /^(apply now|apply|apply for this job|apply for this position|apply to job|apply on company website|apply on company site|easy apply|start application|start your application|i'?m interested|submit application|apply here)$/i;
+        const re = new RegExp(src, 'i');
         const c = [...document.querySelectorAll('a, button, [role=button]')].filter(vis)
-          .find((e) => re.test((e.innerText || e.value || '').trim().replace(/\\s+/g, ' ')));
-        if (c && !/submit application/i.test(c.innerText || '')) c.click();
-      }});
+          .find((e) => re.test((e.innerText || e.value || '').trim().replace(/[\\u2018\\u2019]/g, "'").replace(/\\s+/g, ' ').toLowerCase()));
+        if (c) {{ c.removeAttribute && c.removeAttribute('target'); c.click(); }}
+      }}, APPLY_RE.source);
       await page.waitForTimeout(1000);
       // Apply popups (e.g. Wellfound) render their fields a moment later.
       try {{
@@ -169,8 +179,13 @@ def _classify(url: str, raw: dict) -> ProbeResult:
     fields, files = int(raw.get("fields") or 0), int(raw.get("files") or 0)
     textareas = int(raw.get("textareas") or 0)
     note = "→".join(raw.get("steps") or [])
-    if raw.get("captcha"):
+    fillable = fields >= 2 or files >= 1 or (textareas >= 1 and raw.get("sendBtn"))
+    if raw.get("captcha") and not fillable:
+        # A bot wall instead of a page. A form that merely HAS a captcha is fine:
+        # the user types it when they click Submit.
         return ProbeResult(url, "no_form", form_url, fields, files, note=f"captcha/anti-bot ({note})")
+    if raw.get("captcha"):
+        note = f"{note}; form has a captcha - type it when you submit"
     if raw.get("locked"):
         return ProbeResult(url, "location_locked", form_url, fields, files, note=note)
     if raw.get("password") or raw.get("loginUrl"):
@@ -237,12 +252,24 @@ def probe_until(
 
     Returns (ready, not_ready) as (lead, result) pairs.
     """
+    from urllib.parse import urlsplit
+
     ready: list[tuple[JobLead, ProbeResult]] = []
     not_ready: list[tuple[JobLead, ProbeResult]] = []
-    for i, lead in enumerate(leads):
-        if len(ready) >= want or i >= max_probes:
+    login_walls: dict[str, int] = {}
+    probes = 0
+    for lead in leads:
+        if len(ready) >= want or probes >= max_probes:
             break
+        host = urlsplit(lead.url).netloc.lower()
+        if login_walls.get(host, 0) >= 2:
+            continue  # this site wants an account: don't spend more checks on it this run
+        probes += 1
         res = prober(lead.url)
+        if res.status == "needs_login":
+            login_walls[host] = login_walls.get(host, 0) + 1
+            if login_walls[host] == 2 and echo:
+                echo(f"  [skip site ] {host} needs a login - skipping its other listings this run")
         (ready if res.ready else not_ready).append((lead, res))
         if echo:
             extra = f" {res.email}" if res.email else ""

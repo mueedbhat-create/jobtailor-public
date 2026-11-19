@@ -63,7 +63,8 @@ class TestProbe:
         r = _classify("u", {"fields": 0, "files": 0, "emailApply": "hr@co.com"})
         assert (r.status, r.email) == ("email_apply", "hr@co.com")
         assert _classify("u", {"fields": 1, "files": 0}).status == "no_form"
-        assert _classify("u", {"fields": 5, "captcha": True}).status == "no_form"
+        assert _classify("u", {"fields": 5, "captcha": True}).status == "ready"  # user types it on submit
+        assert _classify("u", {"fields": 0, "captcha": True}).status == "no_form"  # bot wall
         assert _classify("u", {}).status == "error"
 
     def test_probe_until_stops_when_enough_ready(self):
@@ -84,6 +85,19 @@ class TestProbe:
         ready, not_ready = probe_until(leads, want=5, max_probes=3,
                                        prober=lambda u: ProbeResult(u, "no_form"))
         assert ready == [] and len(not_ready) == 3
+
+
+    def test_probe_until_skips_login_walled_site(self):
+        leads = ([lead(f"Marketing {i}", url=f"https://wall.example/{i}") for i in range(5)]
+                 + [lead("Marketing ok", url="https://ok.example/1")])
+        calls = []
+
+        def fake(url):
+            calls.append(url)
+            return ProbeResult(url, "ready" if "ok." in url else "needs_login")
+
+        ready, _ = probe_until(leads, want=1, max_probes=10, prober=fake)
+        assert len(ready) == 1 and len(calls) == 3  # 2 login walls, then straight to the next site
 
 
 class TestHonestStatus:

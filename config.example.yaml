@@ -77,6 +77,16 @@ applicant:
                     # fit gate to decide which jobs match. Be explicit about
                     # what you are NOT (e.g. "NOT an engineer, no engineering
                     # degree") if you want engineer roles filtered.
+  # Standard screening answers - filled into forms by code, never by AI.
+  # Leave a value empty ("") and that question is left for you to answer.
+  answers:
+    years_experience: ""      # e.g. "8"
+    notice_period: ""         # e.g. "Immediate" or "30 days"
+    expected_salary: ""       # e.g. "INR 12 LPA" or "USD 2,000/month"
+    current_salary: ""        # optional
+    needs_sponsorship: ""     # "Yes" or "No"
+    start_date: ""            # e.g. "Immediately" or "2026-12-01"
+    willing_to_relocate: ""   # "Yes" or "No"
 
 adzuna:
   app_id: ""              # free key from https://developer.adzuna.com/

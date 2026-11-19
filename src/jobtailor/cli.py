@@ -318,6 +318,7 @@ def _applicant_profile(cfg) -> ApplicantProfile:
         linkedin=a.linkedin,
         website=a.website,
         headline=a.headline,
+        answers=dict(getattr(a, "answers", {}) or {}),
     )
 
 

@@ -210,3 +210,28 @@ def test_himalayas_lead_parsing():
     assert lead.posted == "2026-11-19" and lead.location == "India"
     assert lead.description.startswith("<p>")
     assert HimalayasSource()._to_lead({"title": "x"}) is None
+
+
+def test_ats_direct_form_urls():
+    from jobtailor.ats import ats_form_url
+
+    u = "https://jobs.lever.co/acme/e7bc46e7-f2af-4b93-bf46-9fedf00cbbfd?utm_source=x"
+    assert ats_form_url(u) == "https://jobs.lever.co/acme/e7bc46e7-f2af-4b93-bf46-9fedf00cbbfd/apply?utm_source=x"
+    assert ats_form_url("https://jobs.lever.co/acme/e7bc46e7-f2af-4b93-bf46-9fedf00cbbfd/apply").endswith("/apply")
+    assert ats_form_url("https://jobs.ashbyhq.com/acme/0b3c7c8e-1111-2222-3333-444455556666").endswith("/application")
+    assert ats_form_url("https://apply.workable.com/acme/j/5E88A31664").endswith("/j/5E88A31664/apply/")
+    assert ats_form_url("https://acme.breezy.hr/p/03612a62fdfa-analytics").endswith("/apply")
+    assert ats_form_url("https://example.com/careers/1") == "https://example.com/careers/1"
+
+
+def test_answers_flow_from_config(tmp_path):
+    from jobtailor.apply import AutoSubmitter, ApplicantProfile
+    from jobtailor.config import load_config
+
+    cfg = tmp_path / "c.yaml"
+    cfg.write_text("applicant:\n  full_name: Alex Doe\n  answers:\n    notice_period: Immediate\n"
+                   "    expected_salary: ''\n")
+    a = load_config(cfg).applicant
+    assert a.answers == {"notice_period": "Immediate"}
+    base = AutoSubmitter(ApplicantProfile(full_name=a.full_name, answers=a.answers))._base
+    assert base["ans_notice_period"] == "Immediate" and "ans_expected_salary" not in base

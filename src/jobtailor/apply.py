@@ -67,9 +67,12 @@ class ApplicantProfile:
     linkedin: str = ""
     website: str = ""
     headline: str = ""
+    # Standard screening answers (applicant.answers in config). Empty = leave for the user.
+    answers: dict[str, str] = field(default_factory=dict)
 
     def as_dict(self) -> dict[str, str]:
-        return {
+        extra = {f"ans_{k}": str(v) for k, v in (self.answers or {}).items() if str(v).strip()}
+        return extra | {
             k: v
             for k, v in {
                 "full_name": self.full_name,
@@ -176,6 +179,9 @@ class AutoSubmitter:
         return result
 
     def _build_script(self, url: str, pdf: str, submit: bool, note: str = "") -> str:
+        from jobtailor.ats import APPLY_TEXT_RE, ats_form_url
+
+        url = ats_form_url(url)
         # Browser-side filler. Kept as a plain string (no f-string) so the JS
         # braces stay readable; values are injected with json.dumps below.
         fill_js = r"""
@@ -216,6 +222,18 @@ class AutoSubmitter:
     ['city',       /\bcity\b|\btown\b/],
     ['location',   /location|address|where are you based|current[\s_-]?location|\bbased\b/],
   ];
+  // Screening questions answered from applicant.answers (checked before the
+  // contact rules, since "years of experience" etc. never collide with them).
+  const ANSWERS = [
+    ['ans_years_experience', /years? of (relevant |total |work |professional )?experience|how many years|total experience|experience \(?in years/],
+    ['ans_notice_period',    /notice period|how soon can you (start|join)|joining (time|period)/],
+    ['ans_expected_salary',  /expected (salary|ctc|compensation|pay|rate)|salary expectation|desired (salary|pay|compensation|rate)|compensation expectation/],
+    ['ans_current_salary',   /current (salary|ctc|compensation)/],
+    ['ans_needs_sponsorship',/sponsor/],
+    ['ans_start_date',       /start date|earliest (start|joining|date)|available to (start|join)|when can you (start|join)/],
+    ['ans_willing_to_relocate', /relocat/],
+  ];
+  const answerFor = (hay) => { for (const [k, re] of ANSWERS) if (profile[k] && re.test(hay)) return k; return null; };
   const fire = (el) => {
     el.dispatchEvent(new Event('input', { bubbles: true }));
     el.dispatchEvent(new Event('change', { bubbles: true }));
@@ -239,9 +257,9 @@ class AutoSubmitter:
       const key = (el.name || el.id || ('field' + i));
       const hay = [(el.name || ''), (el.id || ''), (el.getAttribute('autocomplete') || ''), labelOf(el)]
         .join(' ').toLowerCase().replace(/[_-]+/g, ' ');
-      let want = null;
+      let want = answerFor(hay);
       const NOTE = /cover|interest|why|motivat|\bnote\b|message|tell us|about you|about yourself|additional|anything else|introduc|stand out/;
-      if (el.tagName === 'TEXTAREA') {
+      if (!want && el.tagName === 'TEXTAREA') {
         if (profile.note && (NOTE.test(hay) || !hay.trim())) want = 'note';
         else if (!/address|location/.test(hay)) continue;  // unknown long-answer question: leave for the user
       }
@@ -250,7 +268,7 @@ class AutoSubmitter:
       else if (t === 'tel') want = 'phone';
       else for (const [k, re] of RULES) { if (re.test(hay)) { want = k; break; } }
       if (!want || !profile[want]) continue;
-      if (['first_name','last_name','full_name','email','phone','note'].includes(want) && used.has(want)) continue;
+      if ((['first_name','last_name','full_name','email','phone','note'].includes(want) || want.startsWith('ans_')) && used.has(want)) continue;
       if (el.tagName === 'SELECT') {
         const target = String(profile[want]).toLowerCase();
         const opt = [...el.options].find((o) => o.text.trim().toLowerCase() === target)
@@ -262,6 +280,28 @@ class AutoSubmitter:
       }
       used.add(want);
       matched.push([key, want === 'note' ? '(note: ' + String(profile[want]).slice(0, 40) + '...)' : profile[want]]);
+    }
+  }
+  // Yes/No radio groups for screening questions (sponsorship, relocation ...).
+  for (const doc of docs) {
+    const groups = {};
+    for (const r of doc.querySelectorAll('input[type=radio]')) if (r.name && vis(r)) (groups[r.name] = groups[r.name] || []).push(r);
+    for (const [name, radios] of Object.entries(groups)) {
+      if (radios.some((r) => r.checked)) continue;
+      const box = radios[0].closest('fieldset, [role=radiogroup], .form-group, .field, li, div');
+      const q = ((box && box.querySelector('legend, label, p, span, strong')) || {}).innerText || name;
+      const k = answerFor(q.toLowerCase());
+      if (!k || used.has(k)) continue;
+      const want = String(profile[k]).trim().toLowerCase();
+      const same = (r) => {
+        const t = labelOf(r).replace(/[^a-z ]/g, ' ').replace(/\s+/g, ' ').trim();
+        return t === want || (t && t.split(' ').every((w) => w === want));  // label text may repeat
+      };
+      const pick = radios.find(same)
+                || radios.find((r) => (r.value || '').toLowerCase() === want);
+      if (!pick) continue;
+      pick.click(); fire(pick); used.add(k);
+      matched.push([name, profile[k]]);
     }
   }
   // Mark the resume upload (not the cover-letter one) for uploadFile.
@@ -276,13 +316,16 @@ class AutoSubmitter:
   const vis = (el) => !!(el.offsetParent || el.getClientRects().length);
   const fields = [...document.querySelectorAll('input, textarea')].filter((el) => vis(el) && !['hidden','submit','button','checkbox','radio','search'].includes((el.type||'').toLowerCase()));
   if (fields.length >= 2 || document.querySelector('input[type=file]')) return 'form-present';
-  const re = /^(apply now|apply|apply for this job|apply for this position|easy apply|start application|start your application|apply to job|i'?m interested|apply here)$/i;
+  const re = new RegExp(__APPLY_RE__, 'i');
   const hit = [...document.querySelectorAll('button, a, [role=button]')].filter(vis)
-    .find((e) => re.test((e.innerText || '').trim().replace(/\s+/g, ' ')));
-  if (hit) { hit.click(); return 'clicked'; }
+    .find((e) => re.test((e.innerText || '').trim().replace(/[\u2018\u2019]/g, "'").replace(/\s+/g, ' ').toLowerCase()));
+  if (hit) {
+    if (hit.tagName === 'A' && /^https?:/i.test(hit.href || '') && hit.target === '_blank') { location.href = hit.href; return 'clicked'; }
+    hit.click(); return 'clicked';
+  }
   return 'none';
 })()
-"""
+""".replace("__APPLY_RE__", json.dumps(APPLY_TEXT_RE))
         submit_js = r"""
 (() => {
   const vis = (el) => !!(el.offsetParent || el.getClientRects().length);
