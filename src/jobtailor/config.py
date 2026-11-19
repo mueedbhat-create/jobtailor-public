@@ -87,6 +87,7 @@ class DiscoveryConfig:
     max_per_company: int = 3
     exclude_title_keywords: list[str] = field(default_factory=list)
     skip_engineer_specific: bool = True
+    only_new_each_day: bool = True  # ignore listings already seen on an earlier day
 
 
 @dataclass
@@ -159,6 +160,7 @@ def load_config(path: str | Path) -> Config:
         str(k).lower() for k in disc.get("exclude_title_keywords", []) if k
     ]
     cfg.discovery.skip_engineer_specific = bool(disc.get("skip_engineer_specific", True))
+    cfg.discovery.only_new_each_day = bool(disc.get("only_new_each_day", True))
 
     # Resume
     res = raw.get("resume", {})

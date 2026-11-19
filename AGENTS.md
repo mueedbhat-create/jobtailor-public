@@ -17,6 +17,12 @@ debug, edit code or config, open a browser, or apply by hand. Every extra AI tur
 re-sends the whole conversation; one babysat run cost ~700k tokens. The pipeline
 needs no help.
 
+## Every day starts clean
+
+Never resume or "continue" an earlier day's work, and never read PICKUP.md, old
+logs, or old output to catch up. Each run only looks at listings first seen
+that day (`discovery.only_new_each_day`); leftovers from earlier days are ignored.
+
 ## How the pipeline spends AI tokens
 
 `jobtailor run` does everything in plain code except one small AI call per job

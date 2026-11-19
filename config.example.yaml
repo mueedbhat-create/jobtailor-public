@@ -31,7 +31,7 @@ discovery:
   companies:
     - "Acme Labs"
   sources:
-    adzuna: true
+    adzuna: false
     wellfound: true
     glassdoor: false
     foundit: false
@@ -44,6 +44,7 @@ discovery:
     internshala: false     # internships-only source; enable via internships.sources
   max_per_query: 5
   max_per_company: 3
+  only_new_each_day: true        # each run only handles listings first seen today
   skip_engineer_specific: false  # true = skip engineering/developer roles (checked in
                                  # code first, then in the same single AI call)
 

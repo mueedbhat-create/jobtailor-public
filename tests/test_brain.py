@@ -167,3 +167,18 @@ def test_budget_cap_blocks_before_sending(monkeypatch):
     c = llm_mod.LLMClient(llm_mod.LLMConfig(provider="zen"))
     with pytest.raises(llm_mod.BudgetExceeded):
         c.generate("s", "x" * 2000)
+
+
+def test_only_listings_first_seen_today(tmp_path):
+    import datetime as dt
+
+    from jobtailor.cli import _urls_seen_before_today
+
+    leads = tmp_path / "leads"
+    leads.mkdir()
+    old = (dt.date.today() - dt.timedelta(days=1)).isoformat()
+    today = dt.date.today().isoformat()
+    (leads / f"{old}.json").write_text(json.dumps({"leads": [{"url": "https://j/old"}]}))
+    (leads / f"{today}.json").write_text(json.dumps({"leads": [{"url": "https://j/new"}]}))
+    (leads / "fresh.json").write_text("not a dated file")
+    assert _urls_seen_before_today(leads) == {"https://j/old"}

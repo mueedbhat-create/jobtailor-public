@@ -448,6 +448,25 @@ def run_pipeline(
         _report_run(track, stats, echo)
 
 
+def _urls_seen_before_today(leads_dir: Path) -> set[str]:
+    """Every listing URL fetched on an earlier day (from leads/YYYY-MM-DD.json)."""
+    import datetime as _dt
+    import json as _json
+
+    today = _dt.date.today().isoformat()
+    seen: set[str] = set()
+    for f in Path(leads_dir).glob("????-??-??.json"):
+        if f.stem >= today:
+            continue
+        try:
+            for item in _json.loads(f.read_text()).get("leads", []):
+                if item.get("url"):
+                    seen.add(item["url"])
+        except (ValueError, OSError, AttributeError):
+            continue
+    return seen
+
+
 def _report_run(track: str, stats: dict[str, int], echo) -> None:
     """Print the run summary and show a macOS notification (never a browser)."""
     ready = stats.get("prepared", 0) + stats.get("submitted", 0)
@@ -498,6 +517,18 @@ def _run_pipeline_body(cfg, limit, apply_mode, queries, out, resume, echo,
     if not batch.leads:
         echo("  No leads. Check config sources.")
         return
+
+    # 1.2 Start clean every day: drop listings already seen on an earlier day
+    #     (they were handled, skipped, or left over - never re-spend on them).
+    if getattr(cfg.discovery, "only_new_each_day", True):
+        old_urls = _urls_seen_before_today(out / "leads")
+        before = len(batch.leads)
+        batch.leads = [lead for lead in batch.leads
+                       if lead.url not in old_urls and lead.canonical_url() not in old_urls]
+        echo(f"[1.2/5] Today only: {len(batch.leads)} new, {before - len(batch.leads)} seen on earlier days (ignored)")
+        if not batch.leads:
+            echo("  No new listings today.")
+            return
 
     queue = ApplicationQueue(
         cfg.apply,
